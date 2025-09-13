@@ -10,7 +10,7 @@ import asyncio
 import threading
 from ...services.role_service import RoleService
 from ..auth import get_github_username_for_user, wait_for_username
-from shared.firestore import get_document, set_document, query_collection
+from shared.firestore import get_document, set_document
 
 class UserCommands:
     """Handles user-related Discord commands."""
@@ -54,7 +54,11 @@ class UserCommands:
                         'commits_count': 0,
                         'role': 'member'
                     })
-                    await interaction.followup.send(f"Successfully linked to GitHub user: `{github_username}`", ephemeral=True)
+                    
+                    # Trigger the data pipeline to collect stats for the new user
+                    await self._trigger_data_pipeline()
+                    
+                    await interaction.followup.send(f"Successfully linked to GitHub user: `{github_username}`\n Your stats will be available within a few minutes!", ephemeral=True)
                 else:
                     await interaction.followup.send("Authentication timed out or failed. Please try again.", ephemeral=True)
 
@@ -137,14 +141,15 @@ class UserCommands:
                     return
 
                 # Get stats and create embed
-                embed = self._create_stats_embed(user_data, github_username, stats_type)
-                await interaction.followup.send(embed=embed)
+                embed = await self._create_stats_embed(user_data, github_username, stats_type, interaction)
+                if embed:
+                    await interaction.followup.send(embed=embed)
                 
             except Exception as e:
                 print(f"Error in getstats command: {e}")
                 import traceback
                 traceback.print_exc()
-                await interaction.followup.send("Error retrieving your stats.", ephemeral=True)
+                await interaction.followup.send("📊 Unable to retrieve your stats. This might be because you just linked your account and your data isn't populated yet. Please try again in a few minutes!", ephemeral=True)
         
         return getstats
     
@@ -183,7 +188,7 @@ class UserCommands:
         
         return halloffame
     
-    def _create_stats_embed(self, user_data, github_username, stats_type):
+    async def _create_stats_embed(self, user_data, github_username, stats_type, interaction):
         """Create stats embed for user."""
         import datetime
         
@@ -199,23 +204,28 @@ class UserCommands:
         # Set up type-specific variables
         title_prefix = "PR"
         if stats_type == "pr":
-            count_field = "pr_count"
             stats_field = "pr"
             role = pr_role
             title_prefix = "PR"
         elif stats_type == "issue":
-            count_field = "issues_count"
             stats_field = "issue"
             role = issue_role if issue_role else "None"
             title_prefix = "GitHub Issue Reported"
         elif stats_type == "commit":
-            count_field = "commits_count"
             stats_field = "commit"
             role = commit_role if commit_role else "None"
             title_prefix = "Commit"
  
+        # Check if stats data exists
+        stats = user_data.get("stats")
+        if not stats or stats_field not in stats:
+            await interaction.followup.send(
+                "Your stats are being collected! Please check back in 5 min after the bot has gathered your contribution data.",
+                ephemeral=True
+            )
+            return None
+            
         # Get enhanced stats
-        stats = user_data["stats"]
         type_stats = stats[stats_field]
         
         # Create enhanced embed
@@ -226,12 +236,14 @@ class UserCommands:
         )
         
         # Create stats table with customized format
-        display_prefix = f"{title_prefix}s{' ' * (12 - len(title_prefix + 's'))}"
-        stats_table = f"```\n{display_prefix}   Count   Ranking\n"
-        stats_table += f"24h:           {type_stats.get('daily', 0):<8}#{user_data.get('rankings', {}).get(f'{stats_type}_daily', 0)}\n"
-        stats_table += f"7 days:        {type_stats.get('weekly', 0):<8}#{user_data.get('rankings', {}).get(f'{stats_type}_weekly', 0)}\n"
-        stats_table += f"30 days:       {type_stats.get('monthly', 0):<8}#{user_data.get('rankings', {}).get(f'{stats_type}_monthly', 0)}\n"
-        stats_table += f"Lifetime:      {type_stats.get('all_time', 0):<8}#{user_data.get('rankings', {}).get(stats_type, 0)}\n\n"
+        display_prefix = f"{title_prefix}s"
+        # Calculate proper spacing - ensure minimum 25 characters for the longest prefix
+        prefix_width = max(25, len(display_prefix) + 2)
+        stats_table = f"```\n{display_prefix:<{prefix_width}} Count    Ranking\n"
+        stats_table += f"24h:{'':<{prefix_width-4}} {type_stats.get('daily', 0):<8} #{user_data.get('rankings', {}).get(f'{stats_type}_daily', 0)}\n"
+        stats_table += f"7 days:{'':<{prefix_width-7}} {type_stats.get('weekly', 0):<8} #{user_data.get('rankings', {}).get(f'{stats_type}_weekly', 0)}\n"
+        stats_table += f"30 days:{'':<{prefix_width-8}} {type_stats.get('monthly', 0):<8} #{user_data.get('rankings', {}).get(f'{stats_type}_monthly', 0)}\n"
+        stats_table += f"Lifetime:{'':<{prefix_width-9}} {type_stats.get('all_time', 0):<8} #{user_data.get('rankings', {}).get(stats_type, 0)}\n\n"
         
         # Add averages and streaks with customized wording
         stats_table += f"Daily Average ({stats.get('current_month', 'June')}): {type_stats.get('avg_per_day', 0)} {title_prefix}s\n\n"
@@ -288,4 +300,38 @@ class UserCommands:
             )
         
         embed.set_footer(text=f"Last updated: {last_updated or 'Unknown'}")
-        return embed 
+        return embed
+    
+    async def _trigger_data_pipeline(self):
+        """Trigger the GitHub Actions workflow to collect data for the new user."""
+        import aiohttp
+        import os
+        
+        # GitHub API endpoint for triggering workflow_dispatch
+        repo_owner = os.getenv('REPO_OWNER', 'ruxailab')
+        repo_name = "disgitbot"
+        workflow_id = "discord_bot_pipeline.yml"
+        
+        url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/actions/workflows/{workflow_id}/dispatches"
+        
+        headers = {
+            "Authorization": f"token {os.getenv('GITHUB_TOKEN')}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        payload = {
+            "ref": "main"
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=payload) as response:
+                    if response.status == 204:
+                        print("Successfully triggered data pipeline")
+                        return True
+                    else:
+                        print(f"Failed to trigger pipeline. Status: {response.status}")
+                        return False
+        except Exception as e:
+            print(f"Error triggering pipeline: {e}")
+            return False
