@@ -97,7 +97,7 @@ jobs:
           import firebase_admin
           from firebase_admin import firestore
           db = mt_client.db
-          servers_ref = db.collection('servers')
+          servers_ref = db.collection('discord_servers')
           servers = {doc.id: doc.to_dict() for doc in servers_ref.stream()}
 
           print(f'Found {len(servers)} total servers in Firestore:')
@@ -241,7 +241,9 @@ jobs:
             print(f'Stored labels for {labels_stored} repositories in {github_org}')
             
             # Update user contribution data
-            user_mappings = mt_client.query_org_collection('users', 'discord')  # Get all users
+            user_mappings = {}
+            for doc in mt_client.db.collection('discord_users').stream():
+              user_mappings[doc.id] = doc.to_dict()
             stored_count = 0
             
             for username, user_data in contributions.items():
@@ -282,7 +284,7 @@ jobs:
           guild_service = GuildService(role_service)
           
           # Get all registered Discord servers
-          servers_ref = mt_client.db.collection('servers')
+          servers_ref = mt_client.db.collection('discord_servers')
           servers = {doc.id: doc.to_dict() for doc in servers_ref.stream()}
           
           print(f'Found {len(servers)} registered Discord servers')
@@ -301,7 +303,7 @@ jobs:
             repo_metrics = org_data['repo_metrics']
             
             # Get user mappings for this server's organization
-            user_mappings_data = mt_client.db.collection('users').stream()
+            user_mappings_data = mt_client.db.collection('discord_users').stream()
             user_mappings = {}
             for doc in user_mappings_data:
               user_data = doc.to_dict()
