@@ -371,32 +371,54 @@ def create_oauth_app():
         from flask import request, render_template_string
         from shared.firestore import get_mt_client
         from datetime import datetime
-        
+
+        print("=== SETUP DEBUG: /complete_setup called ===")
+
         guild_id = request.form.get('guild_id')
         github_org = request.form.get('github_org', '').strip()
-        
+
+        print(f"SETUP DEBUG: guild_id = {guild_id}")
+        print(f"SETUP DEBUG: github_org = {github_org}")
+        print(f"SETUP DEBUG: form data = {dict(request.form)}")
+
         if not guild_id or not github_org:
+            print("SETUP DEBUG: Missing required information")
             return "Error: Missing required information", 400
-        
+
         # Validate GitHub organization name (basic validation)
         if not github_org.replace('-', '').replace('_', '').isalnum():
+            print(f"SETUP DEBUG: Invalid GitHub organization name: {github_org}")
             return "Error: Invalid GitHub organization name", 400
-        
+
         try:
+            print("SETUP DEBUG: Getting Firestore client...")
             # Store server configuration
             mt_client = get_mt_client()
-            success = mt_client.set_server_config(guild_id, {
+
+            config_data = {
                 'github_org': github_org,
                 'created_at': datetime.now().isoformat(),
                 'setup_completed': True
-            })
-            
+            }
+
+            print(f"SETUP DEBUG: Attempting to save config: {config_data}")
+            print(f"SETUP DEBUG: To server_id: {guild_id}")
+
+            success = mt_client.set_server_config(guild_id, config_data)
+
+            print(f"SETUP DEBUG: set_server_config returned: {success}")
+
             if not success:
+                print("SETUP DEBUG: Failed to save configuration")
                 return "Error: Failed to save configuration", 500
-            
+
+            print("SETUP DEBUG: Configuration saved successfully!")
+
             # Trigger initial data collection for this organization
             try:
+                print(f"SETUP DEBUG: Triggering data pipeline for org: {github_org}")
                 trigger_data_pipeline_for_org(github_org)
+                print("SETUP DEBUG: Pipeline trigger completed")
             except Exception as e:
                 print(f"Warning: Failed to trigger initial data collection: {e}")
                 # Don't fail setup if pipeline trigger fails
