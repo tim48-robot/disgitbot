@@ -48,12 +48,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.DEV_GH_TOKEN }}
           PYTHONUNBUFFERED: 1
-          PYTHONPATH: ${{ github.workspace }}
+          PYTHONPATH: ${{ github.workspace }}/discord_bot:${{ github.workspace }}
         run: |
           cd discord_bot
           python -u -c "
           import sys, json
           sys.path.insert(0, 'src')
+          sys.path.insert(0, '..')
           from services.github_service import GitHubService
           from shared.firestore import get_mt_client
           
