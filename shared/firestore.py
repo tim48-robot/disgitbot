@@ -14,34 +14,34 @@ class FirestoreMultiTenant:
     def get_server_config(self, discord_server_id: str) -> Optional[Dict[str, Any]]:
         """Get Discord server configuration including GitHub org mapping."""
         try:
-            doc = self.db.collection('servers').document(discord_server_id).get()
+            doc = self.db.collection('discord_servers').document(discord_server_id).get()
             return doc.to_dict() if doc.exists else None
         except Exception as e:
             print(f"Error getting server config for {discord_server_id}: {e}")
             return None
-    
+
     def set_server_config(self, discord_server_id: str, config: Dict[str, Any]) -> bool:
         """Set Discord server configuration."""
         try:
-            self.db.collection('servers').document(discord_server_id).set(config)
+            self.db.collection('discord_servers').document(discord_server_id).set(config)
             return True
         except Exception as e:
             print(f"Error setting server config for {discord_server_id}: {e}")
             return False
-    
+
     def get_user_mapping(self, discord_user_id: str) -> Optional[Dict[str, Any]]:
         """Get user's Discord-GitHub mapping across all servers."""
         try:
-            doc = self.db.collection('users').document(discord_user_id).get()
+            doc = self.db.collection('discord_users').document(discord_user_id).get()
             return doc.to_dict() if doc.exists else None
         except Exception as e:
             print(f"Error getting user mapping for {discord_user_id}: {e}")
             return None
-    
+  
     def set_user_mapping(self, discord_user_id: str, mapping: Dict[str, Any]) -> bool:
         """Set user's Discord-GitHub mapping."""
         try:
-            self.db.collection('users').document(discord_user_id).set(mapping)
+            self.db.collection('discord_users').document(discord_user_id).set(mapping)
             return True
         except Exception as e:
             print(f"Error setting user mapping for {discord_user_id}: {e}")

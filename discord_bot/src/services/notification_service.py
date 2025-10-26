@@ -217,7 +217,7 @@ class NotificationService:
     async def _get_webhook_url(self, notification_type: str) -> Optional[str]:
         """Get webhook URL for specified notification type."""
         try:
-            webhook_config = get_document('notification_config', 'webhooks')
+            webhook_config = get_document('global_config', 'ci_cd_webhooks')
             if not webhook_config:
                 return None
             
@@ -255,11 +255,11 @@ class WebhookManager:
     def set_webhook_url(notification_type: str, webhook_url: str) -> bool:
         """Set webhook URL for specified notification type."""
         try:
-            webhook_config = get_document('notification_config', 'webhooks') or {}
+            webhook_config = get_document('global_config', 'ci_cd_webhooks') or {}
             webhook_config[f'{notification_type}_webhook_url'] = webhook_url
             webhook_config['last_updated'] = datetime.utcnow().isoformat()
             
-            return set_document('notification_config', 'webhooks', webhook_config)
+            return set_document('global_config', 'ci_cd_webhooks', webhook_config)
         except Exception as e:
             logger.error(f"Failed to set webhook URL: {e}")
             return False
@@ -268,7 +268,7 @@ class WebhookManager:
     def get_monitored_repositories() -> List[str]:
         """Get list of repositories being monitored for CI/CD notifications."""
         try:
-            config = get_document('notification_config', 'monitored_repos')
+            config = get_document('global_config', 'monitored_repositories')
             if not config:
                 return []
             return config.get('repositories', [])
@@ -280,7 +280,7 @@ class WebhookManager:
     def add_monitored_repository(repo: str) -> bool:
         """Add repository to CI/CD monitoring list."""
         try:
-            config = get_document('notification_config', 'monitored_repos') or {'repositories': []}
+            config = get_document('global_config', 'monitored_repositories') or {'repositories': []}
             repos = config.get('repositories', [])
             
             if repo not in repos:
@@ -288,7 +288,7 @@ class WebhookManager:
                 config['repositories'] = repos
                 config['last_updated'] = datetime.utcnow().isoformat()
                 
-                return set_document('notification_config', 'monitored_repos', config)
+                return set_document('global_config', 'monitored_repositories', config)
             return True  # Already exists
         except Exception as e:
             logger.error(f"Failed to add monitored repository: {e}")
@@ -298,7 +298,7 @@ class WebhookManager:
     def remove_monitored_repository(repo: str) -> bool:
         """Remove repository from CI/CD monitoring list."""
         try:
-            config = get_document('notification_config', 'monitored_repos')
+            config = get_document('global_config', 'monitored_repositories')
             if not config:
                 return False
             
@@ -308,7 +308,7 @@ class WebhookManager:
                 config['repositories'] = repos
                 config['last_updated'] = datetime.utcnow().isoformat()
                 
-                return set_document('notification_config', 'monitored_repos', config)
+                return set_document('global_config', 'monitored_repositories', config)
             return True  # Already removed
         except Exception as e:
             logger.error(f"Failed to remove monitored repository: {e}")

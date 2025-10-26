@@ -158,7 +158,7 @@ This setup is required only once per server."""
                 reviewer_data['last_updated'] = __import__('time').strftime('%Y-%m-%d %H:%M:%S UTC', __import__('time').gmtime())
                 
                 # Save to Firestore
-                success = set_document('pr_config', 'reviewers', reviewer_data)
+                success = set_document('pr_config', 'reviewers', reviewer_data, discord_server_id=discord_server_id)
                 
                 if success:
                     await interaction.followup.send(f"Successfully added `{username}` to the manual reviewer pool.\nTotal reviewers: {len(all_reviewers)}")
@@ -207,7 +207,7 @@ This setup is required only once per server."""
                     reviewer_data['last_updated'] = __import__('time').strftime('%Y-%m-%d %H:%M:%S UTC', __import__('time').gmtime())
                     
                     # Save to Firestore
-                    success = set_document('pr_config', 'reviewers', reviewer_data)
+                    success = set_document('pr_config', 'reviewers', reviewer_data, discord_server_id=discord_server_id)
                     
                     if success:
                         await interaction.followup.send(f"Successfully removed `{username}` from the manual reviewer pool.\nTotal reviewers: {len(all_reviewers)}")

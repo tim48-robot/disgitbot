@@ -104,7 +104,7 @@ After setup, try these commands:
                 import traceback
                 traceback.print_exc()
 
-    def _check_server_configurations(self):
+    async def _check_server_configurations(self):
         """Check for any unconfigured servers and notify them."""
         try:
             from shared.firestore import get_mt_client
@@ -142,8 +142,8 @@ This server needs to be configured to track GitHub contributions.
                             await system_channel.send(setup_message)
                             print(f"Sent setup reminder to server: {guild.name} (ID: {guild.id})")
 
-            # Run the async function
-            asyncio.create_task(notify_unconfigured_servers())
+            # Run the async function directly
+            await notify_unconfigured_servers()
 
         except Exception as e:
             print(f"Error checking server configurations: {e}")

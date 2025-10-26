@@ -96,12 +96,12 @@ class UserCommands:
                 await interaction.response.defer(ephemeral=True)
 
                 discord_server_id = str(interaction.guild.id)
-                user_data = get_document('discord', str(interaction.user.id), discord_server_id)
+                user_data = get_document('discord_users', str(interaction.user.id), discord_server_id)
 
                 if user_data:
                     # Delete document by setting it to empty (Firestore will remove it)
                     discord_server_id = str(interaction.guild.id)
-                    set_document('discord', str(interaction.user.id), {}, discord_server_id=discord_server_id)
+                    set_document('discord_users', str(interaction.user.id), {}, discord_server_id=discord_server_id)
                     await interaction.followup.send(
                         "Successfully unlinked your Discord account from your GitHub username.",
                         ephemeral=True
@@ -140,7 +140,7 @@ class UserCommands:
                 
                 # Get user's Discord data to find their GitHub username
                 discord_server_id = str(interaction.guild.id)
-                discord_user_data = get_document('discord', user_id, discord_server_id)
+                discord_user_data = get_document('discord_users', user_id, discord_server_id)
                 if not discord_user_data or not discord_user_data.get('github_id'):
                     await interaction.followup.send(
                         "Your Discord account is not linked to a GitHub username. Use `/link` to link it.",
