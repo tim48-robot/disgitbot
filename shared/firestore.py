@@ -23,18 +23,10 @@ class FirestoreMultiTenant:
     def set_server_config(self, discord_server_id: str, config: Dict[str, Any]) -> bool:
         """Set Discord server configuration."""
         try:
-            print(f"FIRESTORE DEBUG: Setting config for server {discord_server_id}")
-            print(f"FIRESTORE DEBUG: Config data: {config}")
-
-            doc_ref = self.db.collection('servers').document(discord_server_id)
-            doc_ref.set(config)
-
-            print(f"FIRESTORE DEBUG: Successfully set config for {discord_server_id}")
+            self.db.collection('servers').document(discord_server_id).set(config)
             return True
         except Exception as e:
             print(f"Error setting server config for {discord_server_id}: {e}")
-            import traceback
-            traceback.print_exc()
             return False
     
     def get_user_mapping(self, discord_user_id: str) -> Optional[Dict[str, Any]]:
