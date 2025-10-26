@@ -87,20 +87,29 @@ jobs:
           
           print('Getting registered organizations...')
           mt_client = get_mt_client()
-          
+
           # Get all registered Discord servers
           import firebase_admin
           from firebase_admin import firestore
           db = mt_client.db
           servers_ref = db.collection('servers')
           servers = {doc.id: doc.to_dict() for doc in servers_ref.stream()}
-          
+
+          print(f'Found {len(servers)} total servers in Firestore:')
+          for server_id, server_data in servers.items():
+              print(f'  Server ID: {server_id}')
+              print(f'  Data: {server_data}')
+
           # Extract unique GitHub organizations
           github_orgs = set()
           for server_id, server_config in servers.items():
             github_org = server_config.get('github_org')
             if github_org:
               github_orgs.add(github_org)
+              print(f'Found GitHub org: {github_org} from server {server_id}')
+            else:
+              print(f'No github_org found in server {server_id}')
+              print(f'Available keys: {list(server_config.keys())}')
           
           print(f'Found {len(github_orgs)} unique organizations: {github_orgs}')
           
