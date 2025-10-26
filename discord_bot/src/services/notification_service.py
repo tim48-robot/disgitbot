@@ -180,13 +180,13 @@ class NotificationService:
         """Build Discord embed for CI/CD notification."""
         # Status-based configuration
         status_config = {
-            'success': {'color': 0x28a745, 'emoji': '✅', 'title': 'Workflow Completed'},
-            'failure': {'color': 0xdc3545, 'emoji': '❌', 'title': 'Workflow Failed'},
-            'in_progress': {'color': 0xffc107, 'emoji': '🔄', 'title': 'Workflow Running'},
-            'cancelled': {'color': 0x6c757d, 'emoji': '⏹️', 'title': 'Workflow Cancelled'}
+            'success': {'color': 0x28a745, 'emoji': '', 'title': 'Workflow Completed'},
+            'failure': {'color': 0xdc3545, 'emoji': '', 'title': 'Workflow Failed'},
+            'in_progress': {'color': 0xffc107, 'emoji': '', 'title': 'Workflow Running'},
+            'cancelled': {'color': 0x6c757d, 'emoji': '️', 'title': 'Workflow Cancelled'}
         }
         
-        config = status_config.get(status, {'color': 0x6c757d, 'emoji': '❓', 'title': 'Workflow Status'})
+        config = status_config.get(status, {'color': 0x6c757d, 'emoji': '', 'title': 'Workflow Status'})
         
         embed = {
             "title": f"{config['emoji']} {config['title']}",

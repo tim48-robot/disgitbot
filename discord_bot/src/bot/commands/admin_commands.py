@@ -17,6 +17,7 @@ class AdminCommands:
     def register_commands(self):
         """Register all admin commands with the bot."""
         self.bot.tree.add_command(self._check_permissions_command())
+        self.bot.tree.add_command(self._setup_command())
         self.bot.tree.add_command(self._setup_voice_stats_command())
         self.bot.tree.add_command(self._add_reviewer_command())
         self.bot.tree.add_command(self._remove_reviewer_command())
@@ -49,6 +50,55 @@ class AdminCommands:
             await interaction.followup.send(f"Bot permissions:\n" + "\n".join(results), ephemeral=True)
         
         return check_permissions
+
+    def _setup_command(self):
+        """Create the setup command for server configuration."""
+        @app_commands.command(name="setup", description="Get setup link to configure GitHub organization")
+        async def setup(interaction: discord.Interaction):
+            """Provides setup link for server administrators."""
+            await interaction.response.defer(ephemeral=True)
+
+            try:
+                # Check if user has administrator permissions
+                if not interaction.user.guild_permissions.administrator:
+                    await interaction.followup.send("Only server administrators can use this command.", ephemeral=True)
+                    return
+
+                guild = interaction.guild
+                assert guild is not None, "Command should only work in guilds"
+
+                # Get the base URL from environment
+                import os
+                base_url = os.getenv("OAUTH_BASE_URL")
+                if not base_url:
+                    await interaction.followup.send("Bot configuration error - please contact support.", ephemeral=True)
+                    return
+
+                setup_url = f"{base_url}/setup?guild_id={guild.id}&guild_name={guild.name}"
+
+                setup_message = f"""**🔧 DisgitBot Setup Required**
+
+Your server needs to be configured to track a GitHub organization.
+
+**Steps:**
+1. Visit: {setup_url}
+2. Enter your GitHub organization name (e.g. "your-org")
+3. Users can then link accounts with `/link`
+
+**Current Status:** ❌ Not configured
+**After Setup:** ✅ Ready to track contributions
+
+This setup is required only once per server."""
+
+                await interaction.followup.send(setup_message, ephemeral=True)
+
+            except Exception as e:
+                await interaction.followup.send(f"Error generating setup link: {str(e)}", ephemeral=True)
+                print(f"Error in setup command: {e}")
+                import traceback
+                traceback.print_exc()
+
+        return setup
     
     def _setup_voice_stats_command(self):
         """Create the setup_voice_stats command."""
@@ -85,7 +135,8 @@ class AdminCommands:
             
             try:
                 # Get current reviewer configuration
-                reviewer_data = get_document('pr_config', 'reviewers')
+                discord_server_id = str(interaction.guild.id)
+                reviewer_data = get_document('pr_config', 'reviewers', discord_server_id)
                 if not reviewer_data:
                     reviewer_data = {'reviewers': [], 'manual_reviewers': [], 'top_contributor_reviewers': [], 'count': 0}
                 
@@ -131,7 +182,8 @@ class AdminCommands:
             
             try:
                 # Get current reviewer configuration
-                reviewer_data = get_document('pr_config', 'reviewers')
+                discord_server_id = str(interaction.guild.id)
+                reviewer_data = get_document('pr_config', 'reviewers', discord_server_id)
                 if not reviewer_data or not reviewer_data.get('reviewers'):
                     await interaction.followup.send("No reviewers found in the database.")
                     return
@@ -183,8 +235,9 @@ class AdminCommands:
             
             try:
                 # Get reviewer data
-                reviewer_data = get_document('pr_config', 'reviewers')
-                contributor_data = get_document('repo_stats', 'contributor_summary')
+                discord_server_id = str(interaction.guild.id)
+                reviewer_data = get_document('pr_config', 'reviewers', discord_server_id)
+                contributor_data = get_document('repo_stats', 'contributor_summary', discord_server_id)
                 
                 embed = discord.Embed(
                     title="PR Reviewer Pool Status",

@@ -260,6 +260,15 @@ Go to your GitHub repository → Settings → Secrets and variables → Actions 
    - **Example:** `OAUTH_BASE_URL=https://discord-bot-abcd1234-uc.a.run.app`
    - **Add to GitHub Secrets:** Create secret named `CLOUD_RUN_URL` with the same URL
 
+3. **Configure Discord OAuth Redirect URI:**
+   - Go to [Discord Developer Portal](https://discord.com/developers/applications)
+   - Select your bot application (same one from Step 1)
+   - Go to **OAuth2** → **General**
+   - In the **Redirects** section, click **Add Redirect**
+   - Add: `YOUR_CLOUD_RUN_URL/setup`
+   - **Example:** `https://discord-bot-abcd1234-uc.a.run.app/setup`
+   - Click **Save Changes**
+
 ### Step 5: Get GITHUB_CLIENT_ID (.env) + GITHUB_CLIENT_SECRET (.env)
 
 **What this configures:** 
@@ -409,7 +418,7 @@ python -u main.py 2>&1 | tee -a discord_bot.log
 ```python
 def run_discord_bot_async():
     """Run the Discord bot asynchronously using existing bot setup"""
-    print("🤖 Starting Discord bot...")
+    print("Starting Discord bot...")
     
     try:
         # Import the existing Discord bot with all commands
@@ -419,7 +428,7 @@ def run_discord_bot_async():
         print(" Discord bot setup imported successfully")
         
         # Get the bot instance and run it
-        print("🤖 Starting Discord bot connection...")
+        print("Starting Discord bot connection...")
         discord_bot_module.bot.run(discord_bot_module.TOKEN)
 ```
 
@@ -428,12 +437,12 @@ def run_discord_bot_async():
 **File: `discord_bot/main.py` (Lines 64-75)**
 ```python
 # Start Discord bot in a separate thread
-print("🧵 Setting up Discord bot thread...")
+print("Setting up Discord bot thread...")
 def start_discord_bot():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        print("🤖 Starting Discord bot in thread...")
+        print("Starting Discord bot in thread...")
         run_discord_bot_async()
     except Exception as e:
         print(f" Discord bot error: {e}")

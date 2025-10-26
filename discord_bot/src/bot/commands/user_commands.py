@@ -47,13 +47,31 @@ class UserCommands:
                 )
 
                 if github_username:
-                    set_document('discord', discord_user_id, {
+                    discord_server_id = str(interaction.guild.id)
+                    
+                    # Get existing user data or create new
+                    from shared.firestore import get_mt_client
+                    mt_client = get_mt_client()
+                    existing_user_data = mt_client.get_user_mapping(discord_user_id) or {}
+                    
+                    # Add this server to user's server list
+                    servers_list = existing_user_data.get('servers', [])
+                    if discord_server_id not in servers_list:
+                        servers_list.append(discord_server_id)
+                    
+                    # Update user mapping with server association
+                    user_data = {
                         'github_id': github_username,
-                        'pr_count': 0,
-                        'issues_count': 0,
-                        'commits_count': 0,
-                        'role': 'member'
-                    })
+                        'servers': servers_list,
+                        'pr_count': existing_user_data.get('pr_count', 0),
+                        'issues_count': existing_user_data.get('issues_count', 0),
+                        'commits_count': existing_user_data.get('commits_count', 0),
+                        'role': existing_user_data.get('role', 'member'),
+                        'last_linked_server': discord_server_id,
+                        'last_updated': str(interaction.created_at)
+                    }
+                    
+                    mt_client.set_user_mapping(discord_user_id, user_data)
                     
                     # Trigger the data pipeline to collect stats for the new user
                     await self._trigger_data_pipeline()
@@ -77,11 +95,13 @@ class UserCommands:
             try:
                 await interaction.response.defer(ephemeral=True)
 
-                user_data = get_document('discord', str(interaction.user.id))
+                discord_server_id = str(interaction.guild.id)
+                user_data = get_document('discord', str(interaction.user.id), discord_server_id)
 
                 if user_data:
                     # Delete document by setting it to empty (Firestore will remove it)
-                    set_document('discord', str(interaction.user.id), {})
+                    discord_server_id = str(interaction.guild.id)
+                    set_document('discord', str(interaction.user.id), {}, discord_server_id=discord_server_id)
                     await interaction.followup.send(
                         "Successfully unlinked your Discord account from your GitHub username.",
                         ephemeral=True
@@ -119,7 +139,8 @@ class UserCommands:
                 user_id = str(interaction.user.id)
                 
                 # Get user's Discord data to find their GitHub username
-                discord_user_data = get_document('discord', user_id)
+                discord_server_id = str(interaction.guild.id)
+                discord_user_data = get_document('discord', user_id, discord_server_id)
                 if not discord_user_data or not discord_user_data.get('github_id'):
                     await interaction.followup.send(
                         "Your Discord account is not linked to a GitHub username. Use `/link` to link it.",
@@ -149,7 +170,7 @@ class UserCommands:
                 print(f"Error in getstats command: {e}")
                 import traceback
                 traceback.print_exc()
-                await interaction.followup.send("📊 Unable to retrieve your stats. This might be because you just linked your account and your data isn't populated yet. Please try again in a few minutes!", ephemeral=True)
+                await interaction.followup.send("Unable to retrieve your stats. This might be because you just linked your account and your data isn't populated yet. Please try again in a few minutes!", ephemeral=True)
         
         return getstats
     
@@ -171,7 +192,8 @@ class UserCommands:
         async def halloffame(interaction: discord.Interaction, type: str = "pr", period: str = "all_time"):
             await interaction.response.defer()
             
-            hall_of_fame_data = get_document('repo_stats', 'hall_of_fame')
+            discord_server_id = str(interaction.guild.id)
+            hall_of_fame_data = get_document('repo_stats', 'hall_of_fame', discord_server_id)
             
             if not hall_of_fame_data:
                 await interaction.followup.send("Hall of fame data not available yet.", ephemeral=True)

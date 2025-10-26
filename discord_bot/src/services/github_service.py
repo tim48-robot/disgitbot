@@ -13,10 +13,10 @@ import os
 class GitHubService:
     """GitHub API service for data collection."""
     
-    def __init__(self):
+    def __init__(self, repo_owner: str = None):
         self.api_url = "https://api.github.com"
         self.token = os.getenv('GITHUB_TOKEN')
-        self.repo_owner = os.getenv('REPO_OWNER', 'ruxailab')
+        self.repo_owner = repo_owner or os.getenv('REPO_OWNER', 'ruxailab')
         
         if not self.token:
             raise ValueError("GITHUB_TOKEN environment variable is required")

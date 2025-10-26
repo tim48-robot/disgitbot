@@ -52,11 +52,38 @@ jobs:
         run: |
           cd discord_bot
           python -u -c "
-          import sys, json
+          import sys, json, os
+          print('Current working directory:', os.getcwd())
+          print('Python path:', sys.path)
+          print('Files in parent directory:', os.listdir('..'))
+
+          # Add parent directory to path
+          parent_dir = os.path.abspath('..')
+          if parent_dir not in sys.path:
+              sys.path.insert(0, parent_dir)
+
+          print('Updated Python path:', sys.path)
+          print('Shared module path:', os.path.join(parent_dir, 'shared'))
+          print('Shared firestore exists:', os.path.exists(os.path.join(parent_dir, 'shared', 'firestore.py')))
+
+          try:
+              import shared.firestore
+              print('Successfully imported shared.firestore')
+              print('Available functions in shared.firestore:', dir(shared.firestore))
+          except Exception as e:
+              print('Error importing shared.firestore:', e)
+              raise
+
+          try:
+              from shared.firestore import get_mt_client
+              print('Successfully imported get_mt_client')
+          except Exception as e:
+              print('Error importing get_mt_client:', e)
+              print('Available functions:', [x for x in dir(shared.firestore) if not x.startswith('_')])
+              raise
+
           sys.path.insert(0, 'src')
-          sys.path.insert(0, '..')
           from services.github_service import GitHubService
-          from shared.firestore import get_mt_client
           
           print('Getting registered organizations...')
           mt_client = get_mt_client()

@@ -41,6 +41,7 @@ class DiscordBot:
         """Create Discord bot instance."""
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.guilds = True  # Required for on_guild_join event
         self.bot = commands.Bot(command_prefix="!", intents=intents)
         
         @self.bot.event
@@ -48,8 +49,106 @@ class DiscordBot:
             try:
                 synced = await self.bot.tree.sync()
                 print(f"{self.bot.user} is online! Synced {len(synced)} command(s).")
+
+                # Check for any unconfigured servers and notify them
+                await self._check_server_configurations()
+
             except Exception as e:
-                print(f"Failed to sync commands: {e}")
+                print(f"Error in on_ready: {e}")
+                import traceback
+                traceback.print_exc()
+
+        @self.bot.event
+        async def on_guild_join(guild):
+            """Called when bot joins a new server - provide setup guidance."""
+            try:
+                # Check if server is already configured
+                from shared.firestore import get_mt_client
+                mt_client = get_mt_client()
+                server_config = mt_client.get_server_config(str(guild.id))
+
+                if not server_config:
+                    # Server not configured - send setup message to system channel
+                    system_channel = guild.system_channel
+                    if not system_channel:
+                        # Fallback: find first available text channel
+                        system_channel = next((ch for ch in guild.text_channels if ch.permissions_for(guild.me).send_messages), None)
+
+                    if system_channel:
+                        base_url = os.getenv("OAUTH_BASE_URL")
+                        setup_url = f"{base_url}/setup?guild_id={guild.id}&guild_name={guild.name}"
+
+                        setup_message = f"""🎉 **DisgitBot Added Successfully!**
+
+This server needs to be configured to track GitHub contributions.
+
+**Quick Setup (30 seconds):**
+1. Visit: {setup_url}
+2. Enter your GitHub organization name
+3. Use `/link` in Discord to connect GitHub accounts
+
+**Or use this command:** `/setup`
+
+After setup, try these commands:
+• `/getstats` - View contribution statistics
+• `/halloffame` - Top contributors leaderboard
+• `/link` - Connect your GitHub account
+
+*This message will only appear once during setup.*"""
+
+                        await system_channel.send(setup_message)
+                        print(f"Sent setup guidance to server: {guild.name} (ID: {guild.id})")
+
+            except Exception as e:
+                print(f"Error sending setup guidance for guild {guild.id}: {e}")
+                import traceback
+                traceback.print_exc()
+
+    def _check_server_configurations(self):
+        """Check for any unconfigured servers and notify them."""
+        try:
+            from shared.firestore import get_mt_client
+            import asyncio
+
+            async def notify_unconfigured_servers():
+                mt_client = get_mt_client()
+
+                for guild in self.bot.guilds:
+                    server_config = mt_client.get_server_config(str(guild.id))
+
+                    if not server_config:
+                        # Server not configured
+                        system_channel = guild.system_channel
+                        if not system_channel:
+                            system_channel = next((ch for ch in guild.text_channels if ch.permissions_for(guild.me).send_messages), None)
+
+                        if system_channel:
+                            base_url = os.getenv("OAUTH_BASE_URL")
+                            setup_url = f"{base_url}/setup?guild_id={guild.id}&guild_name={guild.name}"
+
+                            setup_message = f"""⚠️ **DisgitBot Setup Required**
+
+This server needs to be configured to track GitHub contributions.
+
+**Quick Setup (30 seconds):**
+1. Visit: {setup_url}
+2. Enter your GitHub organization name
+3. Use `/link` in Discord to connect GitHub accounts
+
+**Or use this command:** `/setup`
+
+*This is a one-time setup message.*"""
+
+                            await system_channel.send(setup_message)
+                            print(f"Sent setup reminder to server: {guild.name} (ID: {guild.id})")
+
+            # Run the async function
+            asyncio.create_task(notify_unconfigured_servers())
+
+        except Exception as e:
+            print(f"Error checking server configurations: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _register_commands(self):
         """Register all command modules."""
