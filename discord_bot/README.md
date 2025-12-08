@@ -167,6 +167,10 @@ Go to your GitHub repository → Settings → Secrets and variables → Actions 
    - Click "Reset Token" → Copy the token
    - **Add to `.env`:** `DISCORD_BOT_TOKEN=your_token_here`
    - **Add to GitHub Secrets:** Create secret named `DISCORD_BOT_TOKEN`
+8. **Grab the Discord bot client ID:**
+   - Stay in the same Discord application and open the **General Information** tab
+   - Copy the **Application ID** (this is sometimes labeled "Client ID")
+   - **Add to `.env`:** `DISCORD_BOT_CLIENT_ID=your_application_id`
 
 ### Step 2: Get credentials.json (config file) + GOOGLE_CREDENTIALS_JSON (GitHub Secret)
 
