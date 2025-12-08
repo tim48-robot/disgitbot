@@ -45,6 +45,13 @@ if ! command -v gcloud &> /dev/null; then
     exit 1
 fi
 
+# Ensure fzf is available for interactive selection
+print_step "Checking fzf (interactive selector)..."
+if ! command -v fzf &> /dev/null; then
+    print_error "fzf is required for this script's menus. Please install it (see README)."
+    exit 1
+fi
+
 # Check authentication with better error handling
 print_step "Verifying Google Cloud authentication..."
 auth_account=$(gcloud auth list --filter=status:ACTIVE --format="value(account)" 2>/dev/null | head -n1)
