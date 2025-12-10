@@ -5,11 +5,9 @@ Manages Discord server roles and channels based on GitHub data.
 """
 
 import discord
-from discord.ext import commands
-from typing import Dict, Any, Optional, List
-import time
+from typing import Dict, Any
 import os
-from shared.firestore import get_document, set_document, update_document, query_collection
+from shared.firestore import get_mt_client
 
 class GuildService:
     """Manages Discord guild roles and channels based on GitHub activity."""
@@ -20,12 +18,18 @@ class GuildService:
             raise ValueError("DISCORD_BOT_TOKEN environment variable is required")
         self._role_service = role_service
     
-    async def update_roles_and_channels(self, user_mappings: Dict[str, str], contributions: Dict[str, Any], metrics: Dict[str, Any]) -> bool:
+    async def update_roles_and_channels(self, discord_server_id: str, user_mappings: Dict[str, str], contributions: Dict[str, Any], metrics: Dict[str, Any]) -> bool:
         """Update Discord roles and channels in a single connection session."""
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
         client = discord.Client(intents=intents)
+
+        # Get server's GitHub organization for organization-specific data
+        from shared.firestore import get_mt_client
+        mt_client = get_mt_client()
+        server_config = mt_client.get_server_config(discord_server_id)
+        github_org = server_config.get('github_org') if server_config else None
         
         success = False
         
@@ -41,15 +45,18 @@ class GuildService:
                     return
                 
                 for guild in client.guilds:
-                    print(f"Processing guild: {guild.name} (ID: {guild.id})")
-                    
-                    # Update roles
-                    updated_count = await self._update_roles_for_guild(guild, user_mappings, contributions)
-                    print(f"Updated {updated_count} members in {guild.name}")
-                    
-                    # Update channels
-                    await self._update_channels_for_guild(guild, metrics)
-                    print(f"Updated channels in {guild.name}")
+                    if str(guild.id) == discord_server_id:
+                        print(f"Processing guild: {guild.name} (ID: {guild.id})")
+
+                        # Update roles with organization-specific data
+                        updated_count = await self._update_roles_for_guild(guild, user_mappings, contributions, github_org)
+                        print(f"Updated {updated_count} members in {guild.name}")
+
+                        # Update channels
+                        await self._update_channels_for_guild(guild, metrics)
+                        print(f"Updated channels in {guild.name}")
+                    else:
+                        print(f"Skipping guild {guild.name} - not the target server {discord_server_id}")
                 
                 success = True
                 print("Discord updates completed successfully")
@@ -71,13 +78,16 @@ class GuildService:
             traceback.print_exc()
             return False
     
-    async def _update_roles_for_guild(self, guild: discord.Guild, user_mappings: Dict[str, str], contributions: Dict[str, Any]) -> int:
+    async def _update_roles_for_guild(self, guild: discord.Guild, user_mappings: Dict[str, str], contributions: Dict[str, Any], github_org: str) -> int:
         """Update roles for a single guild using role service."""
         if not self._role_service:
             print("Role service not available - skipping role updates")
             return 0
-        
-        hall_of_fame_data = self._role_service.get_hall_of_fame_data()
+  
+        # Get organization-specific hall of fame data
+        from shared.firestore import get_mt_client
+        mt_client = get_mt_client()
+        hall_of_fame_data = mt_client.get_org_document(github_org, 'repo_stats', 'hall_of_fame') if github_org else None
         medal_assignments = self._role_service.get_medal_assignments(hall_of_fame_data or {})
         
         obsolete_roles = self._role_service.get_obsolete_role_names()

@@ -29,7 +29,8 @@ class AnalyticsCommands:
             await interaction.response.defer()
             
             try:
-                analytics_data = get_document('repo_stats', 'analytics')
+                discord_server_id = str(interaction.guild.id)
+                analytics_data = get_document('repo_stats', 'analytics', discord_server_id)
                 
                 if not analytics_data:
                     await interaction.followup.send("No analytics data available for analysis.", ephemeral=True)
@@ -57,7 +58,8 @@ class AnalyticsCommands:
             await interaction.response.defer()
             
             try:
-                analytics_data = get_document('repo_stats', 'analytics')
+                discord_server_id = str(interaction.guild.id)
+                analytics_data = get_document('repo_stats', 'analytics', discord_server_id)
                 
                 if not analytics_data:
                     await interaction.followup.send("No analytics data available for analysis.", ephemeral=True)
@@ -85,7 +87,8 @@ class AnalyticsCommands:
             await interaction.response.defer()
             
             try:
-                analytics_data = get_document('repo_stats', 'analytics')
+                discord_server_id = str(interaction.guild.id)
+                analytics_data = get_document('repo_stats', 'analytics', discord_server_id)
                 
                 if not analytics_data:
                     await interaction.followup.send("No analytics data available for analysis.", ephemeral=True)
@@ -130,7 +133,8 @@ class AnalyticsCommands:
                     await interaction.followup.send("Invalid metrics. Use: prs, issues, commits, total", ephemeral=True)
                     return
                 
-                analytics_data = get_document('repo_stats', 'analytics')
+                discord_server_id = str(interaction.guild.id)
+                analytics_data = get_document('repo_stats', 'analytics', discord_server_id)
                 
                 if not analytics_data:
                     await interaction.followup.send("No analytics data available for analysis.", ephemeral=True)

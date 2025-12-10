@@ -203,7 +203,7 @@ class NotificationCommands:
                 
                 # Check PR automation webhook
                 pr_webhook = webhook_config.get('pr_automation_webhook_url') if webhook_config else None
-                pr_status = "✅ Configured" if pr_webhook else "❌ Not configured"
+                pr_status = "Configured" if pr_webhook else "Not configured"
                 embed.add_field(
                     name="PR Automation Notifications",
                     value=pr_status,
@@ -212,7 +212,7 @@ class NotificationCommands:
                 
                 # Check CI/CD webhook
                 cicd_webhook = webhook_config.get('cicd_webhook_url') if webhook_config else None
-                cicd_status = "✅ Configured" if cicd_webhook else "❌ Not configured"
+                cicd_status = "Configured" if cicd_webhook else "Not configured"
                 embed.add_field(
                     name="CI/CD Notifications",
                     value=cicd_status,

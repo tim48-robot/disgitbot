@@ -21,8 +21,8 @@ class ReviewerAssigner:
     def _load_reviewers(self) -> List[str]:
         """Load reviewer pool from Firestore configuration."""
         try:
-            logger.info("REVIEWER DEBUG: Attempting to load reviewers from pr_config/reviewers")
-            reviewer_data = get_document('pr_config', 'reviewers')
+            logger.info("REVIEWER DEBUG: Attempting to load reviewers from global_config/reviewer_pool")
+            reviewer_data = get_document('global_config', 'reviewer_pool')
             
             if reviewer_data and 'reviewers' in reviewer_data:
                 reviewers = reviewer_data['reviewers']
@@ -104,7 +104,7 @@ class ReviewerAssigner:
                 'count': len(self.reviewers),
                 'last_updated': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())
             }
-            success = set_document('pr_config', 'reviewers', reviewer_data)
+            success = set_document('global_config', 'reviewer_pool', reviewer_data)
             if success:
                 logger.info(f"Saved {len(self.reviewers)} reviewers to Firestore")
             else:

@@ -148,10 +148,10 @@ class RoleService:
         """Get RGB color for a specific role."""
         return self.config.role_colors.get(role_name)
     
-    def get_hall_of_fame_data(self) -> Optional[Dict[str, Any]]:
+    def get_hall_of_fame_data(self, discord_server_id: str) -> Optional[Dict[str, Any]]:
         """Get hall of fame data from storage."""
         from shared.firestore import get_document
-        return get_document('repo_stats', 'hall_of_fame')
+        return get_document('repo_stats', 'hall_of_fame', discord_server_id)
     
     def get_next_role(self, current_role: str, stats_type: str) -> str:
         """Determine the next role based on current role and stats type."""

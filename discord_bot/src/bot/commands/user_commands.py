@@ -10,14 +10,33 @@ import asyncio
 import threading
 from ...services.role_service import RoleService
 from ..auth import get_github_username_for_user, wait_for_username
-from shared.firestore import get_document, set_document
+from shared.firestore import get_document, set_document, get_mt_client
 
 class UserCommands:
     """Handles user-related Discord commands."""
-    
+
     def __init__(self, bot):
         self.bot = bot
         self.verification_lock = threading.Lock()
+
+    async def _safe_defer(self, interaction):
+        """Safely defer interaction with error handling."""
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except discord.errors.InteractionResponded:
+            # Interaction was already responded to, continue anyway
+            pass
+
+    async def _safe_followup(self, interaction, message, embed=False):
+        """Safely send followup message with error handling."""
+        try:
+            if embed:
+                await interaction.followup.send(embed=message, ephemeral=True)
+            else:
+                await interaction.followup.send(message, ephemeral=True)
+        except discord.errors.InteractionResponded:
+            # Interaction was already responded to, continue anyway
+            pass
     
     def register_commands(self):
         """Register all user commands with the bot."""
@@ -30,41 +49,59 @@ class UserCommands:
         """Create the link command."""
         @app_commands.command(name="link", description="Link your Discord to GitHub")
         async def link(interaction: discord.Interaction):
-            await interaction.response.defer(ephemeral=True)
+            await self._safe_defer(interaction)
 
             if not self.verification_lock.acquire(blocking=False):
-                await interaction.followup.send("The verification process is currently busy. Please try again later.", ephemeral=True)
+                await self._safe_followup(interaction, "The verification process is currently busy. Please try again later.")
                 return
 
             try:
                 discord_user_id = str(interaction.user.id)
-                
+
                 oauth_url = get_github_username_for_user(discord_user_id)
-                await interaction.followup.send(f"Please complete GitHub authentication: {oauth_url}", ephemeral=True)
+                await self._safe_followup(interaction, f"Please complete GitHub authentication: {oauth_url}")
 
                 github_username = await asyncio.get_event_loop().run_in_executor(
                     None, wait_for_username, discord_user_id
                 )
 
                 if github_username:
-                    set_document('discord', discord_user_id, {
+                    discord_server_id = str(interaction.guild.id)
+
+                    # Get existing user data or create new
+                    from shared.firestore import get_mt_client
+                    mt_client = get_mt_client()
+                    existing_user_data = mt_client.get_user_mapping(discord_user_id) or {}
+
+                    # Add this server to user's server list
+                    servers_list = existing_user_data.get('servers', [])
+                    if discord_server_id not in servers_list:
+                        servers_list.append(discord_server_id)
+
+                    # Update user mapping with server association
+                    user_data = {
                         'github_id': github_username,
-                        'pr_count': 0,
-                        'issues_count': 0,
-                        'commits_count': 0,
-                        'role': 'member'
-                    })
-                    
+                        'servers': servers_list,
+                        'pr_count': existing_user_data.get('pr_count', 0),
+                        'issues_count': existing_user_data.get('issues_count', 0),
+                        'commits_count': existing_user_data.get('commits_count', 0),
+                        'role': existing_user_data.get('role', 'member'),
+                        'last_linked_server': discord_server_id,
+                        'last_updated': str(interaction.created_at)
+                    }
+
+                    mt_client.set_user_mapping(discord_user_id, user_data)
+
                     # Trigger the data pipeline to collect stats for the new user
                     await self._trigger_data_pipeline()
-                    
-                    await interaction.followup.send(f"Successfully linked to GitHub user: `{github_username}`\n Your stats will be available within a few minutes!", ephemeral=True)
+
+                    await self._safe_followup(interaction, f"Successfully linked to GitHub user: `{github_username}`\n Your stats will be available within a few minutes!")
                 else:
-                    await interaction.followup.send("Authentication timed out or failed. Please try again.", ephemeral=True)
+                    await self._safe_followup(interaction, "Authentication timed out or failed. Please try again.")
 
             except Exception as e:
                 print("Error in /link:", e)
-                await interaction.followup.send("Failed to link GitHub account.", ephemeral=True)
+                await self._safe_followup(interaction, "Failed to link GitHub account.")
             finally:
                 self.verification_lock.release()
         
@@ -75,27 +112,23 @@ class UserCommands:
         @app_commands.command(name="unlink", description="Unlinks your Discord account from your GitHub username")
         async def unlink(interaction: discord.Interaction):
             try:
-                await interaction.response.defer(ephemeral=True)
+                await self._safe_defer(interaction)
 
-                user_data = get_document('discord', str(interaction.user.id))
+                discord_server_id = str(interaction.guild.id)
+                user_data = get_document('discord_users', str(interaction.user.id), discord_server_id)
 
                 if user_data:
                     # Delete document by setting it to empty (Firestore will remove it)
-                    set_document('discord', str(interaction.user.id), {})
-                    await interaction.followup.send(
-                        "Successfully unlinked your Discord account from your GitHub username.",
-                        ephemeral=True
-                    )
+                    discord_server_id = str(interaction.guild.id)
+                    set_document('discord_users', str(interaction.user.id), {}, discord_server_id=discord_server_id)
+                    await self._safe_followup(interaction, "Successfully unlinked your Discord account from your GitHub username.")
                     print(f"Unlinked Discord user {interaction.user.name}")
                 else:
-                    await interaction.followup.send(
-                        "Your Discord account is not linked to any GitHub username.",
-                        ephemeral=True
-                    )
+                    await self._safe_followup(interaction, "Your Discord account is not linked to any GitHub username.")
 
             except Exception as e:
                 print(f"Error unlinking user: {e}")
-                await interaction.followup.send("An error occurred while unlinking your account.", ephemeral=True)
+                await self._safe_followup(interaction, "An error occurred while unlinking your account.")
         
         return unlink
     
@@ -109,47 +142,45 @@ class UserCommands:
             app_commands.Choice(name="Commits", value="commit")
         ])
         async def getstats(interaction: discord.Interaction, type: str = "pr"):
-            await interaction.response.defer()
-            
+            try:
+                await self._safe_defer(interaction)
+            except Exception:
+                pass
+
             try:
                 stats_type = type.lower().strip()
                 if stats_type not in ["pr", "issue", "commit"]:
                     stats_type = "pr"
-                
+
                 user_id = str(interaction.user.id)
-                
+
                 # Get user's Discord data to find their GitHub username
-                discord_user_data = get_document('discord', user_id)
+                discord_server_id = str(interaction.guild.id)
+                discord_user_data = get_document('discord_users', user_id, discord_server_id)
                 if not discord_user_data or not discord_user_data.get('github_id'):
-                    await interaction.followup.send(
-                        "Your Discord account is not linked to a GitHub username. Use `/link` to link it.",
-                        ephemeral=True
-                    )
+                    await self._safe_followup(interaction, "Your Discord account is not linked to a GitHub username. Use `/link` to link it.")
                     return
-                
+
                 github_username = discord_user_data['github_id']
-                
+
                 # Use the Discord user data which should contain the full contribution stats
                 # The pipeline updates Discord documents with full contribution data
                 user_data = discord_user_data
-                    
+
                 if not user_data:
-                    await interaction.followup.send(
-                        f"No contribution data found for GitHub user '{github_username}'.",
-                        ephemeral=True
-                    )
+                    await self._safe_followup(interaction, f"No contribution data found for GitHub user '{github_username}'.")
                     return
 
                 # Get stats and create embed
                 embed = await self._create_stats_embed(user_data, github_username, stats_type, interaction)
                 if embed:
-                    await interaction.followup.send(embed=embed)
-                
+                    await self._safe_followup(interaction, embed, embed=True)
+
             except Exception as e:
                 print(f"Error in getstats command: {e}")
                 import traceback
                 traceback.print_exc()
-                await interaction.followup.send("📊 Unable to retrieve your stats. This might be because you just linked your account and your data isn't populated yet. Please try again in a few minutes!", ephemeral=True)
+                await self._safe_followup(interaction, "Unable to retrieve your stats. This might be because you just linked your account and your data isn't populated yet. Please try again in a few minutes!")
         
         return getstats
     
@@ -169,22 +200,31 @@ class UserCommands:
             app_commands.Choice(name="Daily", value="daily")
         ])
         async def halloffame(interaction: discord.Interaction, type: str = "pr", period: str = "all_time"):
-            await interaction.response.defer()
-            
-            hall_of_fame_data = get_document('repo_stats', 'hall_of_fame')
-            
-            if not hall_of_fame_data:
-                await interaction.followup.send("Hall of fame data not available yet.", ephemeral=True)
-                return
-            
-            top_3 = hall_of_fame_data.get(type, {}).get(period, [])
-            
-            if not top_3:
-                await interaction.followup.send(f"No data for {type} {period}.", ephemeral=True)
-                return
-            
-            embed = self._create_halloffame_embed(top_3, type, period, hall_of_fame_data.get('last_updated'))
-            await interaction.followup.send(embed=embed)
+            try:
+                await self._safe_defer(interaction)
+            except Exception:
+                pass
+
+            try:
+                discord_server_id = str(interaction.guild.id)
+                hall_of_fame_data = get_document('repo_stats', 'hall_of_fame', discord_server_id)
+
+                if not hall_of_fame_data:
+                    await self._safe_followup(interaction, "Hall of fame data not available yet.")
+                    return
+
+                top_3 = hall_of_fame_data.get(type, {}).get(period, [])
+
+                if not top_3:
+                    await self._safe_followup(interaction, f"No data for {type} {period}.")
+                    return
+
+                embed = self._create_halloffame_embed(top_3, type, period, hall_of_fame_data.get('last_updated'))
+                await self._safe_followup(interaction, embed, embed=True)
+
+            except Exception as e:
+                print(f"Error in halloffame command: {e}")
+                await self._safe_followup(interaction, "Unable to retrieve hall of fame data.")
         
         return halloffame
     
@@ -219,19 +259,28 @@ class UserCommands:
         # Check if stats data exists
         stats = user_data.get("stats")
         if not stats or stats_field not in stats:
-            await interaction.followup.send(
-                "Your stats are being collected! Please check back in 5 min after the bot has gathered your contribution data.",
-                ephemeral=True
-            )
+            await self._safe_followup(interaction, "Your stats are being collected! Please check back in 5 min after the bot has gathered your contribution data.")
             return None
             
         # Get enhanced stats
         type_stats = stats[stats_field]
         
         # Create enhanced embed
+        discord_server_id = str(interaction.guild.id) if interaction.guild else None
+        org_name = None
+        if discord_server_id:
+            try:
+                org_name = get_mt_client().get_org_from_server(discord_server_id)
+            except Exception as e:
+                print(f"Error fetching org for server {discord_server_id}: {e}")
+
+        org_label = org_name or "your linked"
         embed = discord.Embed(
             title=f"GitHub Contribution Metrics for {github_username}",
-            description=f"Stats tracked across all RUXAILAB repositories. Updated daily. Last update: {stats.get('last_updated', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC'))}",
+            description=(
+                f"Stats tracked across {org_label} repositories. "
+                f"Updated daily. Last update: {stats.get('last_updated', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC'))}"
+            ),
             color=discord.Color.blue()
         )
         

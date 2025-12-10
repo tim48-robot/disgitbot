@@ -1,9 +1,98 @@
 import os
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 import firebase_admin
 from firebase_admin import credentials, firestore
 
 _db = None
+
+class FirestoreMultiTenant:
+    """Multi-tenant Firestore client that organizes data by Discord server and GitHub organization."""
+    
+    def __init__(self):
+        self.db = _get_firestore_client()
+    
+    def get_server_config(self, discord_server_id: str) -> Optional[Dict[str, Any]]:
+        """Get Discord server configuration including GitHub org mapping."""
+        try:
+            doc = self.db.collection('discord_servers').document(discord_server_id).get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            print(f"Error getting server config for {discord_server_id}: {e}")
+            return None
+
+    def set_server_config(self, discord_server_id: str, config: Dict[str, Any]) -> bool:
+        """Set Discord server configuration."""
+        try:
+            self.db.collection('discord_servers').document(discord_server_id).set(config)
+            return True
+        except Exception as e:
+            print(f"Error setting server config for {discord_server_id}: {e}")
+            return False
+
+    def get_user_mapping(self, discord_user_id: str) -> Optional[Dict[str, Any]]:
+        """Get user's Discord-GitHub mapping across all servers."""
+        try:
+            doc = self.db.collection('discord_users').document(discord_user_id).get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            print(f"Error getting user mapping for {discord_user_id}: {e}")
+            return None
+  
+    def set_user_mapping(self, discord_user_id: str, mapping: Dict[str, Any]) -> bool:
+        """Set user's Discord-GitHub mapping."""
+        try:
+            self.db.collection('discord_users').document(discord_user_id).set(mapping)
+            return True
+        except Exception as e:
+            print(f"Error setting user mapping for {discord_user_id}: {e}")
+            return False
+    
+    def get_org_document(self, github_org: str, collection: str, document_id: str) -> Optional[Dict[str, Any]]:
+        """Get a document from an organization's collection."""
+        try:
+            doc = self.db.collection('organizations').document(github_org).collection(collection).document(document_id).get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            print(f"Error getting org document {github_org}/{collection}/{document_id}: {e}")
+            return None
+    
+    def set_org_document(self, github_org: str, collection: str, document_id: str, data: Dict[str, Any], merge: bool = False) -> bool:
+        """Set a document in an organization's collection."""
+        try:
+            self.db.collection('organizations').document(github_org).collection(collection).document(document_id).set(data, merge=merge)
+            return True
+        except Exception as e:
+            print(f"Error setting org document {github_org}/{collection}/{document_id}: {e}")
+            return False
+    
+    def update_org_document(self, github_org: str, collection: str, document_id: str, data: Dict[str, Any]) -> bool:
+        """Update a document in an organization's collection."""
+        try:
+            self.db.collection('organizations').document(github_org).collection(collection).document(document_id).update(data)
+            return True
+        except Exception as e:
+            print(f"Error updating org document {github_org}/{collection}/{document_id}: {e}")
+            return False
+    
+    def query_org_collection(self, github_org: str, collection: str, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Query an organization's collection with optional filters."""
+        try:
+            query = self.db.collection('organizations').document(github_org).collection(collection)
+            
+            if filters:
+                for field, value in filters.items():
+                    query = query.where(field, '==', value)
+            
+            docs = query.stream()
+            return {doc.id: doc.to_dict() for doc in docs}
+        except Exception as e:
+            print(f"Error querying org collection {github_org}/{collection}: {e}")
+            return {}
+
+    def get_org_from_server(self, discord_server_id: str) -> Optional[str]:
+        """Get GitHub organization name from Discord server ID."""
+        server_config = self.get_server_config(discord_server_id)
+        return server_config.get('github_org') if server_config else None
 
 def _get_credentials_path() -> str:
     """Get the path to Firebase credentials file.
@@ -113,3 +202,147 @@ def query_collection(collection: str, filters: Optional[Dict[str, Any]] = None) 
     except Exception as e:
         print(f"Error querying collection {collection}: {e}")
         return {} 
+
+# Global multi-tenant instance
+_mt_client = None
+
+def get_mt_client() -> FirestoreMultiTenant:
+    """Get global multi-tenant Firestore client."""
+    global _mt_client
+    if _mt_client is None:
+        _mt_client = FirestoreMultiTenant()
+    return _mt_client
+
+# Legacy compatibility functions - these now require discord_server_id context
+def get_document(collection: str, document_id: str, discord_server_id: str = None) -> Optional[Dict[str, Any]]:
+    """Get a document from Firestore. For org-scoped collections, requires discord_server_id."""
+    mt_client = get_mt_client()
+    
+    # Handle organization-scoped collections
+    if collection in ['repo_stats', 'pr_config', 'repository_labels']:
+        if not discord_server_id:
+            raise ValueError(f"discord_server_id required for org-scoped collection: {collection}")
+        github_org = mt_client.get_org_from_server(discord_server_id)
+        if not github_org:
+            print(f"No GitHub org found for Discord server: {discord_server_id}")
+            return None
+        return mt_client.get_org_document(github_org, collection, document_id)
+    
+    # Handle user mappings (old 'discord' collection)
+    if collection == 'discord':
+        return mt_client.get_user_mapping(document_id)
+    
+    # Handle server configs
+    if collection == 'servers':
+        return mt_client.get_server_config(document_id)
+    
+    # Fallback to old behavior
+    try:
+        db = _get_firestore_client()
+        doc = db.collection(collection).document(document_id).get()
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        print(f"Error getting document {collection}/{document_id}: {e}")
+        return None
+
+def set_document(collection: str, document_id: str, data: Dict[str, Any], merge: bool = False, discord_server_id: str = None) -> bool:
+    """Set a document in Firestore. For org-scoped collections, requires discord_server_id."""
+    mt_client = get_mt_client()
+    
+    # Handle organization-scoped collections
+    if collection in ['repo_stats', 'pr_config', 'repository_labels']:
+        if not discord_server_id:
+            raise ValueError(f"discord_server_id required for org-scoped collection: {collection}")
+        github_org = mt_client.get_org_from_server(discord_server_id)
+        if not github_org:
+            print(f"No GitHub org found for Discord server: {discord_server_id}")
+            return False
+        return mt_client.set_org_document(github_org, collection, document_id, data, merge)
+    
+    # Handle user mappings (old 'discord' collection)
+    if collection == 'discord':
+        return mt_client.set_user_mapping(document_id, data)
+    
+    # Handle server configs
+    if collection == 'servers':
+        return mt_client.set_server_config(document_id, data)
+    
+    # Fallback to old behavior
+    try:
+        db = _get_firestore_client()
+        db.collection(collection).document(document_id).set(data, merge=merge)
+        return True
+    except Exception as e:
+        print(f"Error setting document {collection}/{document_id}: {e}")
+        return False
+
+def update_document(collection: str, document_id: str, data: Dict[str, Any], discord_server_id: str = None) -> bool:
+    """Update a document in Firestore. For org-scoped collections, requires discord_server_id."""
+    mt_client = get_mt_client()
+    
+    # Handle organization-scoped collections
+    if collection in ['repo_stats', 'pr_config', 'repository_labels']:
+        if not discord_server_id:
+            raise ValueError(f"discord_server_id required for org-scoped collection: {collection}")
+        github_org = mt_client.get_org_from_server(discord_server_id)
+        if not github_org:
+            print(f"No GitHub org found for Discord server: {discord_server_id}")
+            return False
+        return mt_client.update_org_document(github_org, collection, document_id, data)
+    
+    # Handle user mappings (old 'discord' collection)
+    if collection == 'discord':
+        # For users, update is the same as set
+        return mt_client.set_user_mapping(document_id, data)
+    
+    # Fallback to old behavior
+    try:
+        db = _get_firestore_client()
+        db.collection(collection).document(document_id).update(data)
+        return True
+    except Exception as e:
+        print(f"Error updating document {collection}/{document_id}: {e}")
+        return False
+
+def query_collection(collection: str, filters: Optional[Dict[str, Any]] = None, discord_server_id: str = None) -> Dict[str, Any]:
+    """Query a collection with optional filters. For org-scoped collections, requires discord_server_id."""
+    mt_client = get_mt_client()
+    
+    # Handle organization-scoped collections
+    if collection in ['repo_stats', 'pr_config', 'repository_labels']:
+        if not discord_server_id:
+            raise ValueError(f"discord_server_id required for org-scoped collection: {collection}")
+        github_org = mt_client.get_org_from_server(discord_server_id)
+        if not github_org:
+            print(f"No GitHub org found for Discord server: {discord_server_id}")
+            return {}
+        return mt_client.query_org_collection(github_org, collection, filters)
+    
+    # Handle user mappings (old 'discord' collection) - return all users
+    if collection == 'discord':
+        try:
+            db = _get_firestore_client()
+            query = db.collection('users')
+            if filters:
+                for field, value in filters.items():
+                    query = query.where(field, '==', value)
+            docs = query.stream()
+            return {doc.id: doc.to_dict() for doc in docs}
+        except Exception as e:
+            print(f"Error querying users collection: {e}")
+            return {}
+    
+    # Fallback to old behavior
+    try:
+        db = _get_firestore_client()
+        query = db.collection(collection)
+        
+        if filters:
+            for field, value in filters.items():
+                query = query.where(field, '==', value)
+        
+        docs = query.stream()
+        return {doc.id: doc.to_dict() for doc in docs}
+    except Exception as e:
+        print(f"Error querying collection {collection}: {e}")
+        return {}
