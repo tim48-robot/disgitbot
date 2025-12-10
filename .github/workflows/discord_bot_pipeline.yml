@@ -174,7 +174,7 @@ jobs:
             processed_labels = metrics_functions.process_repository_labels(raw_data)
             
             print('Generating reviewer pool...')
-            reviewer_pool = reviewer_functions.generate_reviewer_pool(contributions)
+            reviewer_pool = reviewer_functions.generate_reviewer_pool(contributions, github_org=github_org)
             contributor_summary = reviewer_functions.get_contributor_summary(contributions)
             
             print(f'Processed {len(contributions)} contributors for {github_org}')
