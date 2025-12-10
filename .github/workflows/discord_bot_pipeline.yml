@@ -5,7 +5,12 @@ on:
     - cron: '0 0 * * *'  # Run daily at midnight UTC
   push:
   pull_request:
-  workflow_dispatch: {}  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      organization:
+        description: "GitHub org to collect stats for"
+        required: true
+# Allow manual trigger
 
 jobs:
   discord-bot-pipeline:
@@ -51,7 +56,7 @@ jobs:
 
       - name: Collect GitHub Data for Multiple Organizations
         env:
-          GITHUB_TOKEN: ${{ secrets.DEV_GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           PYTHONUNBUFFERED: 1
           PYTHONPATH: ${{ github.workspace }}/discord_bot:${{ github.workspace }}
         run: |
