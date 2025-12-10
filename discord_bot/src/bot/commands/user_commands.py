@@ -10,7 +10,7 @@ import asyncio
 import threading
 from ...services.role_service import RoleService
 from ..auth import get_github_username_for_user, wait_for_username
-from shared.firestore import get_document, set_document
+from shared.firestore import get_document, set_document, get_mt_client
 
 class UserCommands:
     """Handles user-related Discord commands."""
@@ -266,9 +266,21 @@ class UserCommands:
         type_stats = stats[stats_field]
         
         # Create enhanced embed
+        discord_server_id = str(interaction.guild.id) if interaction.guild else None
+        org_name = None
+        if discord_server_id:
+            try:
+                org_name = get_mt_client().get_org_from_server(discord_server_id)
+            except Exception as e:
+                print(f"Error fetching org for server {discord_server_id}: {e}")
+
+        org_label = org_name or "your linked"
         embed = discord.Embed(
             title=f"GitHub Contribution Metrics for {github_username}",
-            description=f"Stats tracked across all RUXAILAB repositories. Updated daily. Last update: {stats.get('last_updated', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC'))}",
+            description=(
+                f"Stats tracked across {org_label} repositories. "
+                f"Updated daily. Last update: {stats.get('last_updated', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC'))}"
+            ),
             color=discord.Color.blue()
         )
         
