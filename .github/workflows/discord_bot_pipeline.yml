@@ -51,7 +51,7 @@ jobs:
             echo "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" | base64 --decode > discord_bot/config/credentials.json
           else
             echo "Using development Firestore credentials"
-            echo "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" | base64 --decode > discord_bot/config/credentials.json
+            echo "${{ secrets.DEV_GOOGLE_CREDENTIALS_JSON }}" | base64 --decode > discord_bot/config/credentials.json
           fi
 
       - name: Collect GitHub Data for Multiple Organizations
@@ -323,7 +323,7 @@ jobs:
             
             # Update Discord roles and channels for this server
             import asyncio
-            success = asyncio.run(guild_service.update_server_roles_and_channels(
+            success = asyncio.run(guild_service.update_roles_and_channels(
               discord_server_id, user_mappings, contributions, repo_metrics
             ))
             print(f'Discord updates for server {discord_server_id} completed: {success}')
