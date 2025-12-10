@@ -524,6 +524,7 @@ def trigger_data_pipeline_for_org(github_org):
             return True
         else:
             print(f"Failed to trigger pipeline for {github_org}. Status: {response.status_code}")
+            print(f"GitHub response: {response.text}")
             return False
     except Exception as e:
         print(f"Error triggering pipeline for {github_org}: {e}")

@@ -12,11 +12,45 @@ PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# Track whether fzf is available for enhanced selections
+FZF_AVAILABLE=0
+
 # Helper functions
 print_header() {
     echo -e "\n${PURPLE}================================${NC}"
     echo -e "${PURPLE}   Discord Bot Deployment Tool   ${NC}"
     echo -e "${PURPLE}================================${NC}\n"
+}
+
+# Wrapper to prefer fzf when available for list selections
+fuzzy_select_or_fallback() {
+    local prompt="$1"
+    shift
+    local options=("$@")
+
+    if [ "$FZF_AVAILABLE" -eq 1 ]; then
+        local header="Type to filter, Enter to select, Esc to cancel"
+        local selection
+        selection=$(printf '%s\n' "${options[@]}" | \
+            fzf --ansi --prompt="${prompt}> " --header="$header" --height=20 --border --exit-0)
+        local exit_code=$?
+        if [ $exit_code -ne 0 ] || [ -z "$selection" ]; then
+            print_warning "Selection cancelled."
+            exit 0
+        fi
+
+        for i in "${!options[@]}"; do
+            if [[ "${options[$i]}" == "$selection" ]]; then
+                INTERACTIVE_SELECTION=$i
+                return 0
+            fi
+        done
+
+        print_error "Unable to match fuzzy selection."
+        exit 1
+    else
+        interactive_select "$prompt" "${options[@]}"
+    fi
 }
 
 print_step() {
@@ -42,6 +76,13 @@ DEFAULT_CREDENTIALS_PATH="$ROOT_DIR/config/credentials.json"
 ENV_PATH="$ROOT_DIR/config/.env"
 
 print_header
+
+if command -v fzf &> /dev/null; then
+    FZF_AVAILABLE=1
+    print_success "fzf detected - fuzzy finder enabled for project and region selection."
+else
+    print_warning "fzf not detected; falling back to arrow-key selection prompts."
+fi
 
 # Check if gcloud is installed and authenticated
 print_step "Checking Google Cloud CLI..."
@@ -156,7 +197,7 @@ select_project() {
     done <<< "$projects"
     
     # Interactive selection
-    interactive_select "Select a Google Cloud Project:" "${project_options[@]}"
+    fuzzy_select_or_fallback "Select a Google Cloud Project:" "${project_options[@]}"
     selection=$INTERACTIVE_SELECTION
     
     PROJECT_ID="${project_ids[$selection]}"
@@ -226,7 +267,7 @@ validate_env_file() {
         echo -e "${RED}Press Enter to continue and choose how to fix this...${NC}"
         read -p "" dummy
         
-        interactive_select "How would you like to fix this?" "${fix_options[@]}"
+        fuzzy_select_or_fallback "How would you like to fix this?" "${fix_options[@]}"
         fix_choice=$INTERACTIVE_SELECTION
         
         if [ $fix_choice -eq 0 ]; then
@@ -256,7 +297,7 @@ handle_env_file() {
             "Create new .env file"
         )
         
-        interactive_select "What would you like to do with the .env file?" "${env_options[@]}"
+        fuzzy_select_or_fallback "What would you like to do with the .env file?" "${env_options[@]}"
         env_choice=$INTERACTIVE_SELECTION
         
         case $env_choice in
@@ -385,7 +426,7 @@ handle_credentials_file() {
             " What is this file?"
         )
         
-        interactive_select "Choose credentials file option:" "${cred_options[@]}"
+        fuzzy_select_or_fallback "Choose credentials file option:" "${cred_options[@]}"
         cred_choice=$INTERACTIVE_SELECTION
         
         case $cred_choice in
@@ -469,7 +510,7 @@ get_deployment_config() {
         "custom"
     )
     
-    interactive_select "Select a Google Cloud Region:" "${region_options[@]}"
+    fuzzy_select_or_fallback "Select a Google Cloud Region:" "${region_options[@]}"
     region_choice=$INTERACTIVE_SELECTION
     
     if [ $region_choice -eq 5 ]; then  # Custom region
@@ -489,7 +530,7 @@ get_deployment_config() {
     declare -a memory_values=("512Mi" "1Gi" "2Gi" "custom")
     declare -a cpu_values=("1" "1" "2" "custom")
     
-    interactive_select "Select Resource Configuration:" "${resource_options[@]}"
+    fuzzy_select_or_fallback "Select Resource Configuration:" "${resource_options[@]}"
     resource_choice=$INTERACTIVE_SELECTION
     
     if [ $resource_choice -eq 3 ]; then  # Custom
@@ -737,4 +778,4 @@ main() {
 }
 
 # Run main function
-main 
+main
