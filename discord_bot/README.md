@@ -364,9 +364,10 @@ The deployment script will:
    # Set your repository as default for GitHub CLI
    gh repo set-default
    
-   # Trigger the workflow to fetch data and assign roles
-   gh workflow run update-discord-roles.yml
+   # Trigger the data pipeline to fetch data and assign roles
+   gh workflow run discord_bot_pipeline.yml -f organization=<your_org>
    ```
+   Use the same organization name you configured in `REPO_OWNER` when invoking the workflow (for example `-f organization=ruxailab`). This runs the full data pipeline, pushes metrics to Firestore, and refreshes Discord roles/channels for every registered server.
 
 ---
 
