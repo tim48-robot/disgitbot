@@ -5,7 +5,11 @@ on:
     - cron: '0 0 * * *'  # Run daily at midnight UTC
   push:
   pull_request:
-  workflow_dispatch: {}  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      organization:
+        description: "GitHub org to collect stats for"
+        required: true
 
 jobs:
   discord-bot-pipeline:
@@ -51,7 +55,7 @@ jobs:
 
       - name: Collect GitHub Data for Multiple Organizations
         env:
-          GITHUB_TOKEN: ${{ secrets.DEV_GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           PYTHONUNBUFFERED: 1
           PYTHONPATH: ${{ github.workspace }}/discord_bot:${{ github.workspace }}
         run: |
@@ -169,7 +173,7 @@ jobs:
             processed_labels = metrics_functions.process_repository_labels(raw_data)
             
             print('Generating reviewer pool...')
-            reviewer_pool = reviewer_functions.generate_reviewer_pool(contributions)
+            reviewer_pool = reviewer_functions.generate_reviewer_pool(contributions, github_org=github_org)
             contributor_summary = reviewer_functions.get_contributor_summary(contributions)
             
             print(f'Processed {len(contributions)} contributors for {github_org}')
@@ -318,7 +322,7 @@ jobs:
             
             # Update Discord roles and channels for this server
             import asyncio
-            success = asyncio.run(guild_service.update_server_roles_and_channels(
+            success = asyncio.run(guild_service.update_roles_and_channels(
               discord_server_id, user_mappings, contributions, repo_metrics
             ))
             print(f'Discord updates for server {discord_server_id} completed: {success}')

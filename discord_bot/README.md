@@ -126,10 +126,16 @@ cp discord_bot/config/.env.example discord_bot/config/.env
 **GitHub repository secrets you need to configure:**
 Go to your GitHub repository → Settings → Secrets and variables → Actions → Click "New repository secret" for each:
 - `DISCORD_BOT_TOKEN`
-- `GH_TOKEN` 
+- `GH_TOKEN`
 - `GOOGLE_CREDENTIALS_JSON`
 - `REPO_OWNER`
 - `CLOUD_RUN_URL`
+
+If you plan to run GitHub Actions from branches other than `main`, also add the matching development secrets so the workflows can deploy correctly:
+- `DEV_GOOGLE_CREDENTIALS_JSON`
+- `DEV_CLOUD_RUN_URL`
+
+> The workflows only reference `GH_TOKEN`, so you can reuse the same PAT for all branches.
 
 ---
 
@@ -176,6 +182,10 @@ Go to your GitHub repository → Settings → Secrets and variables → Actions 
    - Click "Reset Token" → Copy the token
    - **Add to `.env`:** `DISCORD_BOT_TOKEN=your_token_here`
    - **Add to GitHub Secrets:** Create secret named `DISCORD_BOT_TOKEN`
+8. **Grab the Discord bot client ID:**
+   - Stay in the same Discord application and open the **General Information** tab
+   - Copy the **Application ID** (this is sometimes labeled "Client ID")
+   - **Add to `.env`:** `DISCORD_BOT_CLIENT_ID=your_application_id`
 
 ### Step 2: Get credentials.json (config file) + GOOGLE_CREDENTIALS_JSON (GitHub Secret)
 
@@ -223,6 +233,7 @@ Go to your GitHub repository → Settings → Secrets and variables → Actions 
    - Paste the JSON content and encode it to base64
    - Copy the base64 string
    - **Add to GitHub Secrets:** Create secret named `GOOGLE_CREDENTIALS_JSON` with the base64 string
+   - *(Do this for non-main branches)* Create another secret named `DEV_GOOGLE_CREDENTIALS_JSON` with the same base64 string so development branches can run GitHub Actions.
 
 ### Step 3: Get GITHUB_TOKEN (.env) + GH_TOKEN (GitHub Secret)
 
@@ -268,6 +279,7 @@ Go to your GitHub repository → Settings → Secrets and variables → Actions 
    - **Add to `.env`:** `OAUTH_BASE_URL=YOUR_CLOUD_RUN_URL`
    - **Example:** `OAUTH_BASE_URL=https://discord-bot-abcd1234-uc.a.run.app`
    - **Add to GitHub Secrets:** Create secret named `CLOUD_RUN_URL` with the same URL
+   - *(Do this for non-main branches)* Create a `DEV_CLOUD_RUN_URL` pointing to the staging/test Cloud Run service so development workflows continue to function. (You may reuse CLOUD_RUN_URL if you are not deploying production from main.)
 
 3. **Configure Discord OAuth Redirect URI:**
    - Go to [Discord Developer Portal](https://discord.com/developers/applications)
@@ -361,9 +373,10 @@ The deployment script will:
    # Set your repository as default for GitHub CLI
    gh repo set-default
    
-   # Trigger the workflow to fetch data and assign roles
-   gh workflow run update-discord-roles.yml
+   # Trigger the data pipeline to fetch data and assign roles
+   gh workflow run discord_bot_pipeline.yml -f organization=<your_org>
    ```
+   Use the same organization name you configured in `REPO_OWNER` when invoking the workflow (for example `-f organization=ruxailab`). This runs the full data pipeline, pushes metrics to Firestore, and refreshes Discord roles/channels for every registered server.
 
 ---
 
