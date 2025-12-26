@@ -55,8 +55,8 @@ jobs:
 
       - name: Collect GitHub Data for Multiple Organizations
         env:
-          GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}
-          GITHUB_APP_PRIVATE_KEY_B64: ${{ secrets.GITHUB_APP_PRIVATE_KEY_B64 }}
+          GITHUB_APP_ID: ${{ secrets.GH_APP_ID }}
+          GITHUB_APP_PRIVATE_KEY_B64: ${{ secrets.GH_APP_PRIVATE_KEY_B64 }}
           PYTHONUNBUFFERED: 1
           PYTHONPATH: ${{ github.workspace }}/discord_bot:${{ github.workspace }}
         run: |
