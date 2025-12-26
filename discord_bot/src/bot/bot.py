@@ -10,7 +10,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
-from .commands import UserCommands, AdminCommands, AnalyticsCommands, NotificationCommands
+from .commands import UserCommands, AdminCommands, AnalyticsCommands, NotificationCommands, ConfigCommands
 
 class DiscordBot:
     """Main Discord bot class with modular command registration."""
@@ -76,7 +76,8 @@ class DiscordBot:
 
                     if system_channel:
                         base_url = os.getenv("OAUTH_BASE_URL")
-                        setup_url = f"{base_url}/setup?guild_id={guild.id}&guild_name={guild.name}"
+                        from urllib.parse import urlencode
+                        setup_url = f"{base_url}/setup?{urlencode({'guild_id': guild.id, 'guild_name': guild.name})}"
 
                         setup_message = f"""🎉 **DisgitBot Added Successfully!**
 
@@ -84,8 +85,9 @@ This server needs to be configured to track GitHub contributions.
 
 **Quick Setup (30 seconds):**
 1. Visit: {setup_url}
-2. Enter your GitHub organization name
+2. Install the GitHub App and select repositories
 3. Use `/link` in Discord to connect GitHub accounts
+4. Customize roles with `/configure roles`
 
 **Or use this command:** `/setup`
 
@@ -124,7 +126,8 @@ After setup, try these commands:
 
                         if system_channel:
                             base_url = os.getenv("OAUTH_BASE_URL")
-                            setup_url = f"{base_url}/setup?guild_id={guild.id}&guild_name={guild.name}"
+                            from urllib.parse import urlencode
+                            setup_url = f"{base_url}/setup?{urlencode({'guild_id': guild.id, 'guild_name': guild.name})}"
 
                             setup_message = f"""⚠️ **DisgitBot Setup Required**
 
@@ -132,8 +135,9 @@ This server needs to be configured to track GitHub contributions.
 
 **Quick Setup (30 seconds):**
 1. Visit: {setup_url}
-2. Enter your GitHub organization name
+2. Install the GitHub App and select repositories
 3. Use `/link` in Discord to connect GitHub accounts
+4. Customize roles with `/configure roles`
 
 **Or use this command:** `/setup`
 
@@ -156,11 +160,13 @@ This server needs to be configured to track GitHub contributions.
         admin_commands = AdminCommands(self.bot)
         analytics_commands = AnalyticsCommands(self.bot)
         notification_commands = NotificationCommands(self.bot)
+        config_commands = ConfigCommands(self.bot)
         
         user_commands.register_commands()
         admin_commands.register_commands()
         analytics_commands.register_commands()
         notification_commands.register_commands()
+        config_commands.register_commands()
         
         print("All command modules registered")
     

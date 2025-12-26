@@ -22,10 +22,16 @@ class UserCommands:
     async def _safe_defer(self, interaction):
         """Safely defer interaction with error handling."""
         try:
+            if interaction.response.is_done():
+                return
             await interaction.response.defer(ephemeral=True)
         except discord.errors.InteractionResponded:
             # Interaction was already responded to, continue anyway
             pass
+        except discord.errors.HTTPException as exc:
+            if exc.code == 40060:
+                return
+            raise
 
     async def _safe_followup(self, interaction, message, embed=False):
         """Safely send followup message with error handling."""
@@ -37,6 +43,10 @@ class UserCommands:
         except discord.errors.InteractionResponded:
             # Interaction was already responded to, continue anyway
             pass
+        except discord.errors.HTTPException as exc:
+            if exc.code == 40060:
+                return
+            raise
     
     def register_commands(self):
         """Register all user commands with the bot."""
@@ -57,6 +67,25 @@ class UserCommands:
 
             try:
                 discord_user_id = str(interaction.user.id)
+                discord_server_id = str(interaction.guild.id)
+                mt_client = get_mt_client()
+
+                existing_user_data = mt_client.get_user_mapping(discord_user_id) or {}
+                existing_github = existing_user_data.get('github_id')
+                existing_servers = existing_user_data.get('servers', [])
+
+                if existing_github:
+                    if discord_server_id not in existing_servers:
+                        existing_servers.append(discord_server_id)
+                        existing_user_data['servers'] = existing_servers
+                        mt_client.set_user_mapping(discord_user_id, existing_user_data)
+
+                    await self._safe_followup(
+                        interaction,
+                        f"✅ Already linked to GitHub user: `{existing_github}`\n"
+                        f"Use `/unlink` to disconnect and relink."
+                    )
+                    return
 
                 oauth_url = get_github_username_for_user(discord_user_id)
                 await self._safe_followup(interaction, f"Please complete GitHub authentication: {oauth_url}")
@@ -66,12 +95,6 @@ class UserCommands:
                 )
 
                 if github_username:
-                    discord_server_id = str(interaction.guild.id)
-
-                    # Get existing user data or create new
-                    from shared.firestore import get_mt_client
-                    mt_client = get_mt_client()
-                    existing_user_data = mt_client.get_user_mapping(discord_user_id) or {}
 
                     # Add this server to user's server list
                     servers_list = existing_user_data.get('servers', [])
@@ -92,10 +115,11 @@ class UserCommands:
 
                     mt_client.set_user_mapping(discord_user_id, user_data)
 
-                    # Trigger the data pipeline to collect stats for the new user
-                    await self._trigger_data_pipeline()
-
-                    await self._safe_followup(interaction, f"Successfully linked to GitHub user: `{github_username}`\n Your stats will be available within a few minutes!")
+                    await self._safe_followup(
+                        interaction,
+                        f"Successfully linked to GitHub user: `{github_username}`\n"
+                        f"Stats and roles update on the next sync cycle."
+                    )
                 else:
                     await self._safe_followup(interaction, "Authentication timed out or failed. Please try again.")
 
@@ -114,17 +138,19 @@ class UserCommands:
             try:
                 await self._safe_defer(interaction)
 
+                discord_user_id = str(interaction.user.id)
                 discord_server_id = str(interaction.guild.id)
-                user_data = get_document('discord_users', str(interaction.user.id), discord_server_id)
+                mt_client = get_mt_client()
 
-                if user_data:
-                    # Delete document by setting it to empty (Firestore will remove it)
-                    discord_server_id = str(interaction.guild.id)
-                    set_document('discord_users', str(interaction.user.id), {}, discord_server_id=discord_server_id)
-                    await self._safe_followup(interaction, "Successfully unlinked your Discord account from your GitHub username.")
-                    print(f"Unlinked Discord user {interaction.user.name}")
-                else:
+                user_mapping = mt_client.get_user_mapping(discord_user_id) or {}
+                if not user_mapping.get('github_id'):
                     await self._safe_followup(interaction, "Your Discord account is not linked to any GitHub username.")
+                    return
+
+                mt_client.set_user_mapping(discord_user_id, {})
+                set_document('discord_users', discord_user_id, {}, discord_server_id=discord_server_id)
+                await self._safe_followup(interaction, "Successfully unlinked your Discord account from your GitHub username.")
+                print(f"Unlinked Discord user {interaction.user.name}")
 
             except Exception as e:
                 print(f"Error unlinking user: {e}")
@@ -154,22 +180,17 @@ class UserCommands:
 
                 user_id = str(interaction.user.id)
 
-                # Get user's Discord data to find their GitHub username
+                # Check global link mapping first
                 discord_server_id = str(interaction.guild.id)
-                discord_user_data = get_document('discord_users', user_id, discord_server_id)
-                if not discord_user_data or not discord_user_data.get('github_id'):
+                mt_client = get_mt_client()
+                user_mapping = mt_client.get_user_mapping(user_id) or {}
+                github_username = user_mapping.get('github_id')
+                if not github_username:
                     await self._safe_followup(interaction, "Your Discord account is not linked to a GitHub username. Use `/link` to link it.")
                     return
 
-                github_username = discord_user_data['github_id']
-
-                # Use the Discord user data which should contain the full contribution stats
-                # The pipeline updates Discord documents with full contribution data
-                user_data = discord_user_data
-
-                if not user_data:
-                    await self._safe_followup(interaction, f"No contribution data found for GitHub user '{github_username}'.")
-                    return
+                # Fetch org-scoped stats for this server
+                user_data = get_document('discord_users', user_id, discord_server_id) or {}
 
                 # Get stats and create embed
                 embed = await self._create_stats_embed(user_data, github_username, stats_type, interaction)
@@ -351,36 +372,3 @@ class UserCommands:
         embed.set_footer(text=f"Last updated: {last_updated or 'Unknown'}")
         return embed
     
-    async def _trigger_data_pipeline(self):
-        """Trigger the GitHub Actions workflow to collect data for the new user."""
-        import aiohttp
-        import os
-        
-        # GitHub API endpoint for triggering workflow_dispatch
-        repo_owner = os.getenv('REPO_OWNER', 'ruxailab')
-        repo_name = "disgitbot"
-        workflow_id = "discord_bot_pipeline.yml"
-        
-        url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/actions/workflows/{workflow_id}/dispatches"
-        
-        headers = {
-            "Authorization": f"token {os.getenv('GITHUB_TOKEN')}",
-            "Accept": "application/vnd.github.v3+json"
-        }
-        
-        payload = {
-            "ref": "main"
-        }
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=payload) as response:
-                    if response.status == 204:
-                        print("Successfully triggered data pipeline")
-                        return True
-                    else:
-                        print(f"Failed to trigger pipeline. Status: {response.status}")
-                        return False
-        except Exception as e:
-            print(f"Error triggering pipeline: {e}")
-            return False
