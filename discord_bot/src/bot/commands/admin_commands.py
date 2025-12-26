@@ -53,7 +53,7 @@ class AdminCommands:
 
     def _setup_command(self):
         """Create the setup command for server configuration."""
-        @app_commands.command(name="setup", description="Get setup link to configure GitHub organization")
+        @app_commands.command(name="setup", description="Get setup link to connect GitHub organization")
         async def setup(interaction: discord.Interaction):
             """Provides setup link for server administrators."""
             await interaction.response.defer(ephemeral=True)
@@ -67,23 +67,40 @@ class AdminCommands:
                 guild = interaction.guild
                 assert guild is not None, "Command should only work in guilds"
 
+                # Check existing configuration
+                from shared.firestore import get_mt_client
+                mt_client = get_mt_client()
+                server_config = mt_client.get_server_config(str(guild.id)) or {}
+                if server_config.get('setup_completed'):
+                    github_org = server_config.get('github_org', 'unknown')
+                    await interaction.followup.send(
+                        f"✅ This server is already configured.\n\n"
+                        f"GitHub org/account: `{github_org}`\n"
+                        f"Users can run `/link` to connect their accounts.\n"
+                        f"Admins can adjust roles with `/configure roles`.",
+                        ephemeral=True
+                    )
+                    return
+
                 # Get the base URL from environment
                 import os
+                from urllib.parse import urlencode
                 base_url = os.getenv("OAUTH_BASE_URL")
                 if not base_url:
                     await interaction.followup.send("Bot configuration error - please contact support.", ephemeral=True)
                     return
 
-                setup_url = f"{base_url}/setup?guild_id={guild.id}&guild_name={guild.name}"
+                setup_url = f"{base_url}/setup?{urlencode({'guild_id': guild.id, 'guild_name': guild.name})}"
 
                 setup_message = f"""**🔧 DisgitBot Setup Required**
 
-Your server needs to be configured to track a GitHub organization.
+Your server needs to connect a GitHub organization.
 
 **Steps:**
 1. Visit: {setup_url}
-2. Enter your GitHub organization name (e.g. "your-org")
+2. Install the GitHub App and select repositories
 3. Users can then link accounts with `/link`
+4. Configure roles with `/configure roles`
 
 **Current Status:** ❌ Not configured
 **After Setup:** ✅ Ready to track contributions
