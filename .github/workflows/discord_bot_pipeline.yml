@@ -55,7 +55,8 @@ jobs:
 
       - name: Collect GitHub Data for Multiple Organizations
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}
+          GITHUB_APP_PRIVATE_KEY_B64: ${{ secrets.GITHUB_APP_PRIVATE_KEY_B64 }}
           PYTHONUNBUFFERED: 1
           PYTHONPATH: ${{ github.workspace }}/discord_bot:${{ github.workspace }}
         run: |
@@ -93,6 +94,7 @@ jobs:
 
           sys.path.insert(0, 'src')
           from services.github_service import GitHubService
+          from services.github_app_service import GitHubAppService
           
           print('Getting registered organizations...')
           mt_client = get_mt_client()
@@ -109,24 +111,30 @@ jobs:
               print(f'  Server ID: {server_id}')
               print(f'  Data: {server_data}')
 
-          # Extract unique GitHub organizations
-          github_orgs = set()
+          # Extract unique GitHub installations (preferred) with a stable org key
+          installations = {}
           for server_id, server_config in servers.items():
+            installation_id = server_config.get('github_installation_id')
             github_org = server_config.get('github_org')
-            if github_org:
-              github_orgs.add(github_org)
-              print(f'Found GitHub org: {github_org} from server {server_id}')
+            if installation_id and github_org:
+              installations[int(installation_id)] = github_org
+              print(f'Found installation: {installation_id} for {github_org} (server {server_id})')
             else:
-              print(f'No github_org found in server {server_id}')
+              print(f'Skipping server {server_id}: missing github_installation_id or github_org')
               print(f'Available keys: {list(server_config.keys())}')
+
+          print(f'Found {len(installations)} unique installations: {installations}')
           
-          print(f'Found {len(github_orgs)} unique organizations: {github_orgs}')
-          
-          # Collect data for each organization
+          # Collect data for each installation (GitHub App token)
           all_org_data = {}
-          for github_org in github_orgs:
-            print(f'Collecting data for organization: {github_org}')
-            github_service = GitHubService(github_org)
+          gh_app = GitHubAppService()
+          for installation_id, github_org in installations.items():
+            print(f'Collecting data for installation {installation_id} ({github_org})')
+            token = gh_app.get_installation_access_token(installation_id)
+            if not token:
+              print(f'Failed to get installation token for {installation_id}, skipping')
+              continue
+            github_service = GitHubService(github_org, token=token, installation_id=installation_id)
             raw_data = github_service.collect_organization_data()
             all_org_data[github_org] = raw_data
             print(f'Collected data for {len(raw_data.get(\"repositories\", {}))} repositories in {github_org}')
