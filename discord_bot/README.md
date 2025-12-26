@@ -1,5 +1,22 @@
 # Discord Bot Setup Guide
 
+# Quick Start (Hosted Bot Users)
+
+Use this section if you only want to invite the hosted bot and use it in your Discord server.
+
+1. **Invite the bot** using the link provided by the maintainers.
+2. In your Discord server, run: `/setup`
+3. Click **Install GitHub App** and select the org/repo(s) to track.
+4. Each user links their GitHub account with: `/link`
+5. (Optional) Configure role rules:
+   ```
+   /configure roles action:add metric:commits threshold:1 role:@Contributor
+   /configure roles action:add metric:prs threshold:10 role:@ActiveContributor
+   /configure roles action:add metric:prs threshold:50 role:@CoreTeam
+   ```
+
+That’s it. No local setup, no tokens, no config files.
+
 # 1. Prerequisites
 
 ### Python 3.13 Setup
@@ -108,6 +125,9 @@ cp discord_bot/config/.env.example discord_bot/config/.env
 - `GITHUB_TOKEN=` (GitHub API access)
 - `GITHUB_CLIENT_ID=` (GitHub OAuth app ID)
 - `GITHUB_CLIENT_SECRET=` (GitHub OAuth app secret)
+- `GITHUB_APP_ID=` (GitHub App ID)
+- `GITHUB_APP_PRIVATE_KEY_B64=` (GitHub App private key, base64)
+- `GITHUB_APP_SLUG=` (GitHub App slug)
 - `REPO_OWNER=` (Your GitHub organization name)
 - `OAUTH_BASE_URL=` (Your Cloud Run URL - set in Step 4)
 
@@ -121,6 +141,8 @@ Go to your GitHub repository → Settings → Secrets and variables → Actions 
 - `GOOGLE_CREDENTIALS_JSON`
 - `REPO_OWNER`
 - `CLOUD_RUN_URL`
+- `GITHUB_APP_ID`
+- `GITHUB_APP_PRIVATE_KEY_B64`
 
 If you plan to run GitHub Actions from branches other than `main`, also add the matching development secrets so the workflows can deploy correctly:
 - `DEV_GOOGLE_CREDENTIALS_JSON`
@@ -300,11 +322,39 @@ If you plan to run GitHub Actions from branches other than `main`, also add the 
    **Example URLs:** If your Cloud Run URL is `https://discord-bot-abcd1234-uc.a.run.app`, then:
    - Homepage URL: `https://discord-bot-abcd1234-uc.a.run.app`
    - Callback URL: `https://discord-bot-abcd1234-uc.a.run.app/login/github/authorized`
+   - If you are using the newer hosted flow, set the callback to `YOUR_CLOUD_RUN_URL/auth/callback` instead.
 
 4. **Get Credentials:**
    - Click "Register application"
    - Copy the "Client ID" → **Add to `.env`:** `GITHUB_CLIENT_ID=your_client_id`
    - Click "Generate a new client secret" → Copy it → **Add to `.env`:** `GITHUB_CLIENT_SECRET=your_secret`
+
+### Step 5b: Create GitHub App (GITHUB_APP_ID / PRIVATE_KEY / SLUG)
+
+**What this configures:**
+- `.env` file: `GITHUB_APP_ID=...`, `GITHUB_APP_PRIVATE_KEY_B64=...`, `GITHUB_APP_SLUG=...`
+- GitHub Secrets: `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_B64`
+
+**What this does:** Allows DisgitBot to read repository data without user PATs.
+
+1. **Create the GitHub App (org or personal):**
+   - For org: `https://github.com/organizations/<ORG>/settings/apps`
+   - For personal: `https://github.com/settings/apps`
+2. **Set these URLs:**
+   - **Homepage URL:** `YOUR_CLOUD_RUN_URL`
+   - **Setup URL:** `YOUR_CLOUD_RUN_URL/github/app/setup`
+   - **Callback URL:** leave empty
+3. **Permissions (read-only):**
+   - Metadata (required), Contents, Issues, Pull requests
+   - Webhooks: OFF
+4. **Install target:** choose **Any account** so anyone can install it.
+5. **Generate a private key:**
+   - Download the `.pem` file
+   - Base64 it (keep BEGIN/END lines): `base64 -w 0 path/to/private-key.pem`
+6. **Set `.env` values:**
+   - `GITHUB_APP_ID=...` (App ID from the GitHub App page)
+   - `GITHUB_APP_PRIVATE_KEY_B64=...` (base64 from step 5)
+   - `GITHUB_APP_SLUG=...` (the app slug shown in the app page URL)
 
 ### Step 6: Get REPO_OWNER (.env) + REPO_OWNER (GitHub Secret)
 
