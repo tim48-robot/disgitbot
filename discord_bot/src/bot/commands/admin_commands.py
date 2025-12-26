@@ -74,7 +74,7 @@ class AdminCommands:
                 if server_config.get('setup_completed'):
                     github_org = server_config.get('github_org', 'unknown')
                     await interaction.followup.send(
-                        f"✅ This server is already configured.\n\n"
+                        f"This server is already configured.\n\n"
                         f"GitHub org/account: `{github_org}`\n"
                         f"Users can run `/link` to connect their accounts.\n"
                         f"Admins can adjust roles with `/configure roles`.",
@@ -92,7 +92,7 @@ class AdminCommands:
 
                 setup_url = f"{base_url}/setup?{urlencode({'guild_id': guild.id, 'guild_name': guild.name})}"
 
-                setup_message = f"""**🔧 DisgitBot Setup Required**
+                setup_message = f"""**DisgitBot Setup Required**
 
 Your server needs to connect a GitHub organization.
 
@@ -102,8 +102,8 @@ Your server needs to connect a GitHub organization.
 3. Users can then link accounts with `/link`
 4. Configure roles with `/configure roles`
 
-**Current Status:** ❌ Not configured
-**After Setup:** ✅ Ready to track contributions
+**Current Status:** Not configured
+**After Setup:** Ready to track contributions
 
 This setup is required only once per server."""
 

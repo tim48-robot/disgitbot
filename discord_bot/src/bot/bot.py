@@ -79,7 +79,7 @@ class DiscordBot:
                         from urllib.parse import urlencode
                         setup_url = f"{base_url}/setup?{urlencode({'guild_id': guild.id, 'guild_name': guild.name})}"
 
-                        setup_message = f"""🎉 **DisgitBot Added Successfully!**
+                        setup_message = f"""**DisgitBot Added Successfully!**
 
 This server needs to be configured to track GitHub contributions.
 
@@ -129,7 +129,7 @@ After setup, try these commands:
                             from urllib.parse import urlencode
                             setup_url = f"{base_url}/setup?{urlencode({'guild_id': guild.id, 'guild_name': guild.name})}"
 
-                            setup_message = f"""⚠️ **DisgitBot Setup Required**
+                            setup_message = f"""️ **DisgitBot Setup Required**
 
 This server needs to be configured to track GitHub contributions.
 

@@ -82,7 +82,7 @@ class UserCommands:
 
                     await self._safe_followup(
                         interaction,
-                        f"✅ Already linked to GitHub user: `{existing_github}`\n"
+                        f"Already linked to GitHub user: `{existing_github}`\n"
                         f"Use `/unlink` to disconnect and relink."
                     )
                     return

@@ -148,13 +148,13 @@ def create_oauth_app():
                 <p>Track GitHub contributions and manage roles automatically in your Discord server.</p>
 
                 <div class="warning">
-                    ⚠️ Important: Setup Required After Adding Bot
+                    Important: Setup Required After Adding Bot
                 </div>
 
                 <a href="{discord_invite_url}" class="btn">Add Bot to Discord</a>
 
                 <div class="steps">
-                    <h3>🔧 Setup Instructions (Required)</h3>
+                    <h3>Setup Instructions (Required)</h3>
                     <div class="step">
                         <strong>Step 1:</strong> Click "Add Bot to Discord" above
                     </div>
@@ -172,16 +172,16 @@ def create_oauth_app():
 
                 <h3>Features:</h3>
                 <div class="feature">
-                    <span class="emoji">📊</span> Real-time GitHub statistics
+                    <span class="emoji"></span> Real-time GitHub statistics
                 </div>
                 <div class="feature">
-                    <span class="emoji">🏆</span> Automated role assignment
+                    <span class="emoji"></span> Automated role assignment
                 </div>
                 <div class="feature">
-                    <span class="emoji">📈</span> Contribution analytics & charts
+                    <span class="emoji"></span> Contribution analytics & charts
                 </div>
                 <div class="feature">
-                    <span class="emoji">🔄</span> Auto-updating voice channels
+                    <span class="emoji"></span> Auto-updating voice channels
                 </div>
 
                 <p style="font-size: 0.9em; color: #b9bbbe; margin-top: 30px;">
