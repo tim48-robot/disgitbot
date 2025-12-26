@@ -252,20 +252,22 @@ jobs:
             
             print(f'Stored labels for {labels_stored} repositories in {github_org}')
             
-            # Update user contribution data
-            user_mappings = {}
-            for doc in mt_client.db.collection('discord_users').stream():
-              user_mappings[doc.id] = doc.to_dict()
+            # Update org-scoped user contribution data (per Discord server/org)
+            user_mappings = {doc.id: doc.to_dict() for doc in mt_client.db.collection('discord_users').stream()}
             stored_count = 0
             
-            for username, user_data in contributions.items():
-              # Find Discord users with this GitHub username
-              for discord_id, user_mapping in user_mappings.items():
-                if user_mapping.get('github_id') == username:
-                  if mt_client.set_user_mapping(discord_id, {**user_mapping, **user_data}):
-                    stored_count += 1
+            for discord_id, user_mapping in user_mappings.items():
+              github_id = user_mapping.get('github_id')
+              if not github_id:
+                continue
+              user_data = contributions.get(github_id)
+              if not user_data:
+                continue
+              org_user_data = {**user_mapping, **user_data}
+              if mt_client.set_org_document(github_org, 'discord_users', discord_id, org_user_data):
+                stored_count += 1
             
-            print(f'Updated contribution data for {stored_count} users in {github_org}')
+            print(f'Updated org-scoped contribution data for {stored_count} users in {github_org}')
           
           print('All organization data stored successfully!')
           "
