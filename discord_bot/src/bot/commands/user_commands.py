@@ -138,17 +138,19 @@ class UserCommands:
             try:
                 await self._safe_defer(interaction)
 
+                discord_user_id = str(interaction.user.id)
                 discord_server_id = str(interaction.guild.id)
-                user_data = get_document('discord_users', str(interaction.user.id), discord_server_id)
+                mt_client = get_mt_client()
 
-                if user_data:
-                    # Delete document by setting it to empty (Firestore will remove it)
-                    discord_server_id = str(interaction.guild.id)
-                    set_document('discord_users', str(interaction.user.id), {}, discord_server_id=discord_server_id)
-                    await self._safe_followup(interaction, "Successfully unlinked your Discord account from your GitHub username.")
-                    print(f"Unlinked Discord user {interaction.user.name}")
-                else:
+                user_mapping = mt_client.get_user_mapping(discord_user_id) or {}
+                if not user_mapping.get('github_id'):
                     await self._safe_followup(interaction, "Your Discord account is not linked to any GitHub username.")
+                    return
+
+                mt_client.set_user_mapping(discord_user_id, {})
+                set_document('discord_users', discord_user_id, {}, discord_server_id=discord_server_id)
+                await self._safe_followup(interaction, "Successfully unlinked your Discord account from your GitHub username.")
+                print(f"Unlinked Discord user {interaction.user.name}")
 
             except Exception as e:
                 print(f"Error unlinking user: {e}")
@@ -178,22 +180,17 @@ class UserCommands:
 
                 user_id = str(interaction.user.id)
 
-                # Get user's Discord data to find their GitHub username
+                # Check global link mapping first
                 discord_server_id = str(interaction.guild.id)
-                discord_user_data = get_document('discord_users', user_id, discord_server_id)
-                if not discord_user_data or not discord_user_data.get('github_id'):
+                mt_client = get_mt_client()
+                user_mapping = mt_client.get_user_mapping(user_id) or {}
+                github_username = user_mapping.get('github_id')
+                if not github_username:
                     await self._safe_followup(interaction, "Your Discord account is not linked to a GitHub username. Use `/link` to link it.")
                     return
 
-                github_username = discord_user_data['github_id']
-
-                # Use the Discord user data which should contain the full contribution stats
-                # The pipeline updates Discord documents with full contribution data
-                user_data = discord_user_data
-
-                if not user_data:
-                    await self._safe_followup(interaction, f"No contribution data found for GitHub user '{github_username}'.")
-                    return
+                # Fetch org-scoped stats for this server
+                user_data = get_document('discord_users', user_id, discord_server_id) or {}
 
                 # Get stats and create embed
                 embed = await self._create_stats_embed(user_data, github_username, stats_type, interaction)
