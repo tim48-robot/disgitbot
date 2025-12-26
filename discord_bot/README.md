@@ -141,8 +141,8 @@ Go to your GitHub repository → Settings → Secrets and variables → Actions 
 - `GOOGLE_CREDENTIALS_JSON`
 - `REPO_OWNER`
 - `CLOUD_RUN_URL`
-- `GITHUB_APP_ID`
-- `GITHUB_APP_PRIVATE_KEY_B64`
+- `GH_APP_ID`
+- `GH_APP_PRIVATE_KEY_B64`
 
 If you plan to run GitHub Actions from branches other than `main`, also add the matching development secrets so the workflows can deploy correctly:
 - `DEV_GOOGLE_CREDENTIALS_JSON`
@@ -333,9 +333,14 @@ If you plan to run GitHub Actions from branches other than `main`, also add the 
 
 **What this configures:**
 - `.env` file: `GITHUB_APP_ID=...`, `GITHUB_APP_PRIVATE_KEY_B64=...`, `GITHUB_APP_SLUG=...`
-- GitHub Secrets: `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_B64`
+- GitHub Secrets: `GH_APP_ID`, `GH_APP_PRIVATE_KEY_B64`
 
 **What this does:** Allows DisgitBot to read repository data without user PATs.
+
+**Where these values come from:**
+- `GITHUB_APP_ID`: shown on the GitHub App settings page (App ID field).
+- `GITHUB_APP_PRIVATE_KEY_B64`: base64 of the downloaded `.pem` private key.
+- `GITHUB_APP_SLUG`: the URL slug of your GitHub App (shown in the app page URL).
 
 1. **Create the GitHub App (org or personal):**
    - For org: `https://github.com/organizations/<ORG>/settings/apps`
@@ -355,6 +360,8 @@ If you plan to run GitHub Actions from branches other than `main`, also add the 
    - `GITHUB_APP_ID=...` (App ID from the GitHub App page)
    - `GITHUB_APP_PRIVATE_KEY_B64=...` (base64 from step 5)
    - `GITHUB_APP_SLUG=...` (the app slug shown in the app page URL)
+
+**Security note:** Never commit the private key or base64 value to git. Treat it like a password.
 
 ### Step 6: Get REPO_OWNER (.env) + REPO_OWNER (GitHub Secret)
 
