@@ -15,28 +15,28 @@ class RoleConfiguration:
         # PR Role Thresholds
         self.pr_thresholds = {
             "🌸 1+ PRs": 1,
-            "🌺 6+ PRs": 6,
-            "🌻 16+ PRs": 16,
-            "🌷 31+ PRs": 31,
-            "🌹 51+ PRs": 51
+            "🌺 5+ PRs": 5,
+            "🌻 10+ PRs": 10,
+            "🌷 25+ PRs": 25,
+            "🌹 50+ PRs": 50
         }
-        
-        # Issue Role Thresholds  
+
+        # Issue Role Thresholds
         self.issue_thresholds = {
             "🍃 1+ GitHub Issues Reported": 1,
-            "🌿 6+ GitHub Issues Reported": 6,
-            "🌱 16+ GitHub Issues Reported": 16,
-            "🌾 31+ GitHub Issues Reported": 31,
-            "🍀 51+ GitHub Issues Reported": 51
+            "🌿 5+ GitHub Issues Reported": 5,
+            "🌱 10+ GitHub Issues Reported": 10,
+            "🌾 25+ GitHub Issues Reported": 25,
+            "🍀 50+ GitHub Issues Reported": 50
         }
-        
+
         # Commit Role Thresholds
         self.commit_thresholds = {
             "☁️ 1+ Commits": 1,
-            "🌊 51+ Commits": 51,
-            "🌈 101+ Commits": 101,
-            "🌙 251+ Commits": 251,
-            "⭐ 501+ Commits": 501
+            "🌊 25+ Commits": 25,
+            "🌈 50+ Commits": 50,
+            "🌙 100+ Commits": 100,
+            "⭐ 250+ Commits": 250
         }
         
         # Medal roles for top 3 contributors
@@ -44,19 +44,19 @@ class RoleConfiguration:
         
         # Obsolete role names to clean up
         self.obsolete_roles = {
-            "Beginner (1-5 PRs)", "Contributor (6-15 PRs)", "Analyst (16-30 PRs)", 
-            "Expert (31-50 PRs)", "Master (51+ PRs)", "Beginner (1-5 Issues)", 
-            "Contributor (6-15 Issues)", "Analyst (16-30 Issues)", "Expert (31-50 Issues)", 
-            "Master (51+ Issues)", "Beginner (1-50 Commits)", "Contributor (51-100 Commits)", 
+            "Beginner (1-5 PRs)", "Contributor (6-15 PRs)", "Analyst (16-30 PRs)",
+            "Expert (31-50 PRs)", "Master (51+ PRs)", "Beginner (1-5 Issues)",
+            "Contributor (6-15 Issues)", "Analyst (16-30 Issues)", "Expert (31-50 Issues)",
+            "Master (51+ Issues)", "Beginner (1-50 Commits)", "Contributor (51-100 Commits)",
             "Analyst (101-250 Commits)", "Expert (251-500 Commits)", "Master (501+ Commits)",
-            # Clean up the old minimal names
+            # Old numeric thresholds
             "1+ PR", "6+ PR", "16+ PR", "31+ PR", "51+ PR",
-            "1+ Issue", "6+ Issue", "16+ Issue", "31+ Issue", "51+ Issue", 
+            "1+ Issue", "6+ Issue", "16+ Issue", "31+ Issue", "51+ Issue",
             "1+ Issue Reporter", "6+ Issue Reporter", "16+ Issue Reporter", "31+ Issue Reporter", "51+ Issue Reporter",
             "1+ Bug Hunter", "6+ Bug Hunter", "16+ Bug Hunter", "31+ Bug Hunter", "51+ Bug Hunter",
             "1+ Commit", "51+ Commit", "101+ Commit", "251+ Commit", "501+ Commit",
             "PR Champion", "PR Runner-up", "PR Bronze",
-            # Clean up previous emoji versions
+            # Old emoji versions
             "🌸 1+ PR", "🌺 6+ PR", "🌻 16+ PR", "🌷 31+ PR", "🌹 51+ PR",
             "🍃 1+ Issue", "🌿 6+ Issue", "🌱 16+ Issue", "🌾 31+ Issue", "🍀 51+ Issue",
             "🍃 1+ Issue Reporter", "🌿 6+ Issue Reporter", "🌱 16+ Issue Reporter", "🌾 31+ Issue Reporter", "🍀 51+ Issue Reporter",
