@@ -10,3 +10,4 @@ python-dateutil==2.8.2
 Werkzeug==3.0.1
 matplotlib>=3.9.2
 numpy>=2.0.0
+PyJWT[crypto]==2.9.0

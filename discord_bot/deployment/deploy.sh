@@ -12,6 +12,11 @@ PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+FZF_AVAILABLE=0
+if command -v fzf &>/dev/null; then
+    FZF_AVAILABLE=1
+fi
+
 # Helper functions
 print_header() {
     echo -e "\n${PURPLE}================================${NC}"
@@ -42,6 +47,12 @@ DEFAULT_CREDENTIALS_PATH="$ROOT_DIR/config/credentials.json"
 ENV_PATH="$ROOT_DIR/config/.env"
 
 print_header
+
+if [ "$FZF_AVAILABLE" -eq 1 ]; then
+    print_success "fzf detected: you can type to filter options in selection menus."
+else
+    print_warning "fzf not detected; falling back to arrow-key menu navigation."
+fi
 
 # Check if gcloud is installed and authenticated
 print_step "Checking Google Cloud CLI..."
@@ -132,6 +143,31 @@ interactive_select() {
     done
 }
 
+fuzzy_select_or_fallback() {
+    local prompt="$1"
+    shift
+    local options=("$@")
+
+    if [ "$FZF_AVAILABLE" -eq 1 ]; then
+        local selection
+        selection=$(printf '%s\n' "${options[@]}" | fzf --prompt="$prompt> " --height=15 --border --exit-0)
+        if [ -z "$selection" ]; then
+            print_warning "Selection cancelled."
+            exit 0
+        fi
+        for i in "${!options[@]}"; do
+            if [[ "${options[$i]}" == "$selection" ]]; then
+                INTERACTIVE_SELECTION=$i
+                return
+            fi
+        done
+        print_error "Unable to match selection."
+        exit 1
+    else
+        interactive_select "$prompt" "${options[@]}"
+    fi
+}
+
 # Function to select Google Cloud Project
 select_project() {
     print_step "Fetching your Google Cloud projects..."
@@ -156,7 +192,7 @@ select_project() {
     done <<< "$projects"
     
     # Interactive selection
-    interactive_select "Select a Google Cloud Project:" "${project_options[@]}"
+    fuzzy_select_or_fallback "Select a Google Cloud Project" "${project_options[@]}"
     selection=$INTERACTIVE_SELECTION
     
     PROJECT_ID="${project_ids[$selection]}"
@@ -297,14 +333,8 @@ create_new_env_file() {
         print_warning "Discord Bot Token is required!"
     done
     
-    # GitHub Token
-    while true; do
-        read -p "GitHub Token: " github_token
-        if [ -n "$github_token" ]; then
-            break
-        fi
-        print_warning "GitHub Token is required!"
-    done
+    # GitHub Token (optional for GitHub App mode)
+    read -p "GitHub Token (optional): " github_token
     
     # GitHub Client ID
     read -p "GitHub Client ID: " github_client_id
@@ -317,6 +347,14 @@ create_new_env_file() {
     
     # OAuth Base URL (optional - will auto-detect on Cloud Run)
     read -p "OAuth Base URL (optional): " oauth_base_url
+
+    # Discord Bot Client ID
+    read -p "Discord Bot Client ID: " discord_bot_client_id
+
+    # GitHub App configuration (invite-only mode)
+    read -p "GitHub App ID: " github_app_id
+    read -p "GitHub App Private Key (base64): " github_app_private_key_b64
+    read -p "GitHub App Slug: " github_app_slug
     
     # Create .env file
     cat > "$ENV_PATH" << EOF
@@ -326,6 +364,10 @@ GITHUB_CLIENT_ID=$github_client_id
 GITHUB_CLIENT_SECRET=$github_client_secret
 REPO_OWNER=$repo_owner
 OAUTH_BASE_URL=$oauth_base_url
+DISCORD_BOT_CLIENT_ID=$discord_bot_client_id
+GITHUB_APP_ID=$github_app_id
+GITHUB_APP_PRIVATE_KEY_B64=$github_app_private_key_b64
+GITHUB_APP_SLUG=$github_app_slug
 EOF
     
     print_success ".env file created successfully!"
@@ -355,6 +397,18 @@ edit_env_file() {
     
     read -p "OAuth Base URL [$OAUTH_BASE_URL]: " new_oauth_base_url
     oauth_base_url=${new_oauth_base_url:-$OAUTH_BASE_URL}
+
+    read -p "Discord Bot Client ID [$DISCORD_BOT_CLIENT_ID]: " new_discord_bot_client_id
+    discord_bot_client_id=${new_discord_bot_client_id:-$DISCORD_BOT_CLIENT_ID}
+
+    read -p "GitHub App ID [$GITHUB_APP_ID]: " new_github_app_id
+    github_app_id=${new_github_app_id:-$GITHUB_APP_ID}
+
+    read -p "GitHub App Private Key (base64) [$GITHUB_APP_PRIVATE_KEY_B64]: " new_github_app_private_key_b64
+    github_app_private_key_b64=${new_github_app_private_key_b64:-$GITHUB_APP_PRIVATE_KEY_B64}
+
+    read -p "GitHub App Slug [$GITHUB_APP_SLUG]: " new_github_app_slug
+    github_app_slug=${new_github_app_slug:-$GITHUB_APP_SLUG}
     
     # Update .env file
     cat > "$ENV_PATH" << EOF
@@ -364,6 +418,10 @@ GITHUB_CLIENT_ID=$github_client_id
 GITHUB_CLIENT_SECRET=$github_client_secret
 REPO_OWNER=$repo_owner
 OAUTH_BASE_URL=$oauth_base_url
+DISCORD_BOT_CLIENT_ID=$discord_bot_client_id
+GITHUB_APP_ID=$github_app_id
+GITHUB_APP_PRIVATE_KEY_B64=$github_app_private_key_b64
+GITHUB_APP_SLUG=$github_app_slug
 EOF
     
     print_success ".env file updated successfully!"
@@ -469,7 +527,7 @@ get_deployment_config() {
         "custom"
     )
     
-    interactive_select "Select a Google Cloud Region:" "${region_options[@]}"
+    fuzzy_select_or_fallback "Select a Google Cloud Region" "${region_options[@]}"
     region_choice=$INTERACTIVE_SELECTION
     
     if [ $region_choice -eq 5 ]; then  # Custom region
@@ -489,7 +547,7 @@ get_deployment_config() {
     declare -a memory_values=("512Mi" "1Gi" "2Gi" "custom")
     declare -a cpu_values=("1" "1" "2" "custom")
     
-    interactive_select "Select Resource Configuration:" "${resource_options[@]}"
+    fuzzy_select_or_fallback "Select Resource Configuration" "${resource_options[@]}"
     resource_choice=$INTERACTIVE_SELECTION
     
     if [ $resource_choice -eq 3 ]; then  # Custom
