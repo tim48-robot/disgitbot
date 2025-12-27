@@ -17,6 +17,8 @@ Use this section if you only want to invite the hosted bot and use it in your Di
 
 That’s it. No local setup, no tokens, no config files.
 
+**Note:** This section is for maintainers (RUXAILAB) or anyone who wants to run/modify the code themselves. If you only want to use the hosted bot, use the **Quick Start (Hosted Bot Users)** section above and skip the prerequisites.
+
 # 1. Prerequisites
 
 ### Python 3.13 Setup
@@ -349,6 +351,9 @@ If you plan to run GitHub Actions from branches other than `main`, also add the 
    - **Homepage URL:** `YOUR_CLOUD_RUN_URL`
    - **Setup URL:** `YOUR_CLOUD_RUN_URL/github/app/setup`
    - **Callback URL:** leave empty
+3. **Enable redirect on update (important for multiple Discord servers):**
+   - Turn on **Redirect on update** so GitHub redirects back to the Setup URL even when the App is already installed.
+   - This lets a second Discord server complete setup using the same org installation.
 3. **Permissions (read-only):**
    - Metadata (required), Contents, Issues, Pull requests
    - Webhooks: OFF
