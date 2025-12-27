@@ -124,14 +124,16 @@ cp discord_bot/config/.env.example discord_bot/config/.env
 
 **Your `.env` file needs these values:**
 - `DISCORD_BOT_TOKEN=` (Discord bot authentication)
-- `GITHUB_TOKEN=` (GitHub API access)
 - `GITHUB_CLIENT_ID=` (GitHub OAuth app ID)
 - `GITHUB_CLIENT_SECRET=` (GitHub OAuth app secret)
 - `GITHUB_APP_ID=` (GitHub App ID)
 - `GITHUB_APP_PRIVATE_KEY_B64=` (GitHub App private key, base64)
 - `GITHUB_APP_SLUG=` (GitHub App slug)
-- `REPO_OWNER=` (Your GitHub organization name)
 - `OAUTH_BASE_URL=` (Your Cloud Run URL - set in Step 4)
+
+**Also required for PR review tooling or legacy single-org flow:**
+- `GITHUB_TOKEN=` (PAT for PR review or legacy single-org pipeline)
+- `REPO_OWNER=` (Org name for legacy single-org pipeline)
 
 **Additional files you need:**
 - `discord_bot/config/credentials.json` (Firebase/Google Cloud credentials)
@@ -256,7 +258,7 @@ If you plan to run GitHub Actions from branches other than `main`, also add the 
 - `.env` file: `GITHUB_TOKEN=your_token_here`
 - GitHub Secret: `GH_TOKEN`
 
-**What this does:** Allows the bot to access GitHub API to fetch repository and contribution data.
+**What this does:** Allows PR review tooling and legacy single-org workflows to access the GitHub API.
 
 1. **Go to GitHub Token Settings:** https://github.com/settings/tokens
 2. **Create New Token:**
@@ -324,7 +326,7 @@ If you plan to run GitHub Actions from branches other than `main`, also add the 
    **Example URLs:** If your Cloud Run URL is `https://discord-bot-abcd1234-uc.a.run.app`, then:
    - Homepage URL: `https://discord-bot-abcd1234-uc.a.run.app`
    - Callback URL: `https://discord-bot-abcd1234-uc.a.run.app/login/github/authorized`
-   - If you are using the newer hosted flow, set the callback to `YOUR_CLOUD_RUN_URL/auth/callback` instead.
+   - After OAuth completes, the app will redirect users to `/auth/callback` for the success page.
 
 4. **Get Credentials:**
    - Click "Register application"
@@ -354,14 +356,14 @@ If you plan to run GitHub Actions from branches other than `main`, also add the 
 3. **Enable redirect on update (important for multiple Discord servers):**
    - Turn on **Redirect on update** so GitHub redirects back to the Setup URL even when the App is already installed.
    - This lets a second Discord server complete setup using the same org installation.
-3. **Permissions (read-only):**
+4. **Permissions (read-only):**
    - Metadata (required), Contents, Issues, Pull requests
    - Webhooks: OFF
-4. **Install target:** choose **Any account** so anyone can install it.
-5. **Generate a private key:**
+5. **Install target:** choose **Any account** so anyone can install it.
+6. **Generate a private key:**
    - Download the `.pem` file
    - Base64 it (keep BEGIN/END lines): `base64 -w 0 path/to/private-key.pem`
-6. **Set `.env` values:**
+7. **Set `.env` values:**
    - `GITHUB_APP_ID=...` (App ID from the GitHub App page)
    - `GITHUB_APP_PRIVATE_KEY_B64=...` (base64 from step 5)
    - `GITHUB_APP_SLUG=...` (the app slug shown in the app page URL)
