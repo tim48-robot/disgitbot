@@ -107,6 +107,25 @@ class RoleService:
         commit_role = self._determine_role_for_threshold(commits_count, self.config.commit_thresholds)
         
         return pr_role, issue_role, commit_role
+
+    def determine_custom_roles(self, pr_count: int, issues_count: int, commits_count: int, role_rules: Dict[str, Any]) -> Dict[str, Optional[Dict[str, Any]]]:
+        """Determine custom roles from per-server role rules."""
+        return {
+            'pr': self._select_custom_rule(pr_count, role_rules.get('pr', [])),
+            'issue': self._select_custom_rule(issues_count, role_rules.get('issue', [])),
+            'commit': self._select_custom_rule(commits_count, role_rules.get('commit', []))
+        }
+
+    def _select_custom_rule(self, count: int, rules: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Pick the highest-threshold custom rule that the count satisfies."""
+        if not rules:
+            return None
+        sorted_rules = sorted(rules, key=lambda r: r.get('threshold', 0))
+        selected = None
+        for rule in sorted_rules:
+            if count >= int(rule.get('threshold', 0)):
+                selected = rule
+        return selected
     
     def _determine_role_for_threshold(self, count: int, thresholds: Dict[str, int]) -> Optional[str]:
         """Determine role for a specific contribution type."""

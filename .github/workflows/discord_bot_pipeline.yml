@@ -55,7 +55,9 @@ jobs:
 
       - name: Collect GitHub Data for Multiple Organizations
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_APP_ID: ${{ secrets.GH_APP_ID }}
+          GITHUB_APP_PRIVATE_KEY_B64: ${{ secrets.GH_APP_PRIVATE_KEY_B64 }}
+          TARGET_ORG: ${{ github.event.inputs.organization }}
           PYTHONUNBUFFERED: 1
           PYTHONPATH: ${{ github.workspace }}/discord_bot:${{ github.workspace }}
         run: |
@@ -93,9 +95,11 @@ jobs:
 
           sys.path.insert(0, 'src')
           from services.github_service import GitHubService
+          from services.github_app_service import GitHubAppService
           
           print('Getting registered organizations...')
           mt_client = get_mt_client()
+          target_org = os.getenv('TARGET_ORG') or None
 
           # Get all registered Discord servers
           import firebase_admin
@@ -106,27 +110,42 @@ jobs:
 
           print(f'Found {len(servers)} total servers in Firestore:')
           for server_id, server_data in servers.items():
-              print(f'  Server ID: {server_id}')
-              print(f'  Data: {server_data}')
+            print(f'  Server ID: {server_id}')
+            print(f'  Data: {server_data}')
 
-          # Extract unique GitHub organizations
-          github_orgs = set()
+          # Extract unique GitHub installations (preferred) with a stable org key
+          installations = {}
           for server_id, server_config in servers.items():
+            installation_id = server_config.get('github_installation_id')
             github_org = server_config.get('github_org')
-            if github_org:
-              github_orgs.add(github_org)
-              print(f'Found GitHub org: {github_org} from server {server_id}')
+            if installation_id and github_org:
+              installations[int(installation_id)] = github_org
+              print(f'Found installation: {installation_id} for {github_org} (server {server_id})')
             else:
-              print(f'No github_org found in server {server_id}')
+              print(f'Skipping server {server_id}: missing github_installation_id or github_org')
               print(f'Available keys: {list(server_config.keys())}')
+
+          print(f'Found {len(installations)} unique installations: {installations}')
+
+          if target_org:
+            target_org_lower = target_org.lower()
+            installations = {
+              installation_id: github_org
+              for installation_id, github_org in installations.items()
+              if str(github_org).lower() == target_org_lower
+            }
+            print(f'Filtered installations for target org {target_org}: {installations}')
           
-          print(f'Found {len(github_orgs)} unique organizations: {github_orgs}')
-          
-          # Collect data for each organization
+          # Collect data for each installation (GitHub App token)
           all_org_data = {}
-          for github_org in github_orgs:
-            print(f'Collecting data for organization: {github_org}')
-            github_service = GitHubService(github_org)
+          gh_app = GitHubAppService()
+          for installation_id, github_org in installations.items():
+            print(f'Collecting data for installation {installation_id} ({github_org})')
+            token = gh_app.get_installation_access_token(installation_id)
+            if not token:
+              print(f'Failed to get installation token for {installation_id}, skipping')
+              continue
+            github_service = GitHubService(github_org, token=token, installation_id=installation_id)
             raw_data = github_service.collect_organization_data()
             all_org_data[github_org] = raw_data
             print(f'Collected data for {len(raw_data.get(\"repositories\", {}))} repositories in {github_org}')
@@ -198,6 +217,7 @@ jobs:
       - name: Store Data in Multi-Tenant Firestore
         env:
           GOOGLE_APPLICATION_CREDENTIALS: discord_bot/config/credentials.json
+          TARGET_ORG: ${{ github.event.inputs.organization }}
           PYTHONUNBUFFERED: 1
           PYTHONPATH: ${{ github.workspace }}
         run: |
@@ -205,15 +225,19 @@ jobs:
           python -u -c "
           from shared.firestore import get_mt_client
           import json
+          import os
           
           print('Loading all processed data...')
           with open('all_processed_data.json', 'r') as f:
             all_processed_data = json.load(f)
           
           mt_client = get_mt_client()
+          target_org = os.getenv('TARGET_ORG') or None
           
           # Store data for each organization
           for github_org, data in all_processed_data.items():
+            if target_org and str(github_org).lower() != target_org.lower():
+              continue
             print(f'Storing data for organization: {github_org}')
             
             contributions = data['contributions']
@@ -244,20 +268,20 @@ jobs:
             
             print(f'Stored labels for {labels_stored} repositories in {github_org}')
             
-            # Update user contribution data
-            user_mappings = {}
-            for doc in mt_client.db.collection('discord_users').stream():
-              user_mappings[doc.id] = doc.to_dict()
-            stored_count = 0
-            
+            # Store per-username contributions for instant stats lookup
+            contribution_count = 0
             for username, user_data in contributions.items():
-              # Find Discord users with this GitHub username
-              for discord_id, user_mapping in user_mappings.items():
-                if user_mapping.get('github_id') == username:
-                  if mt_client.set_user_mapping(discord_id, {**user_mapping, **user_data}):
-                    stored_count += 1
-            
-            print(f'Updated contribution data for {stored_count} users in {github_org}')
+              payload = {
+                'github_username': username,
+                'pr_count': user_data.get('pr_count', 0),
+                'issues_count': user_data.get('issues_count', 0),
+                'commits_count': user_data.get('commits_count', 0),
+                'stats': user_data.get('stats', {}),
+                'rankings': user_data.get('rankings', {})
+              }
+              if mt_client.set_org_document(github_org, 'contributions', username, payload):
+                contribution_count += 1
+            print(f'Stored contribution data for {contribution_count} GitHub users in {github_org}')
           
           print('All organization data stored successfully!')
           "

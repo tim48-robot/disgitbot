@@ -36,8 +36,9 @@ FIELD_CONFIG = {
         'description': 'Discord bot token for authentication'
     },
     'GITHUB_TOKEN': {
-        'required': True,
-        'description': 'GitHub personal access token for API access'
+        'required': False,
+        'warning_if_empty': 'GITHUB_TOKEN is optional when using a GitHub App; required only for legacy PAT-based features like workflow dispatch.',
+        'description': 'GitHub personal access token for legacy API access'
     },
     'GITHUB_CLIENT_ID': {
         'required': True,
@@ -55,6 +56,25 @@ FIELD_CONFIG = {
         'required': False,
         'warning_if_empty': "OAUTH_BASE_URL is empty - if you're deploying to get an initial URL, this is OK. You can update it later after deployment.",
         'description': 'Base URL for OAuth redirects (auto-detected on Cloud Run if empty)'
+    },
+    'DISCORD_BOT_CLIENT_ID': {
+        'required': True,
+        'description': 'Discord application ID (client ID)'
+    },
+    'GITHUB_APP_ID': {
+        'required': False,
+        'warning_if_empty': 'GITHUB_APP_ID is optional for legacy OAuth/PAT mode; required for the invite-only GitHub App installation flow.',
+        'description': 'GitHub App ID (for GitHub App auth)'
+    },
+    'GITHUB_APP_PRIVATE_KEY_B64': {
+        'required': False,
+        'warning_if_empty': 'GITHUB_APP_PRIVATE_KEY_B64 is required for GitHub App auth unless GITHUB_APP_PRIVATE_KEY is provided.',
+        'description': 'Base64-encoded GitHub App private key PEM'
+    },
+    'GITHUB_APP_SLUG': {
+        'required': False,
+        'warning_if_empty': 'GITHUB_APP_SLUG is required to generate the GitHub App install URL in /setup.',
+        'description': 'GitHub App slug (the /apps/<slug> part)'
     }
 }
 

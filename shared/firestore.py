@@ -227,6 +227,14 @@ def get_document(collection: str, document_id: str, discord_server_id: str = Non
             print(f"No GitHub org found for Discord server: {discord_server_id}")
             return None
         return mt_client.get_org_document(github_org, collection, document_id)
+
+    # Handle org-scoped user stats
+    if collection == 'discord_users' and discord_server_id:
+        github_org = mt_client.get_org_from_server(discord_server_id)
+        if not github_org:
+            print(f"No GitHub org found for Discord server: {discord_server_id}")
+            return None
+        return mt_client.get_org_document(github_org, collection, document_id)
     
     # Handle user mappings (old 'discord' collection)
     if collection == 'discord':
@@ -253,6 +261,14 @@ def set_document(collection: str, document_id: str, data: Dict[str, Any], merge:
     if collection in ['repo_stats', 'pr_config', 'repository_labels']:
         if not discord_server_id:
             raise ValueError(f"discord_server_id required for org-scoped collection: {collection}")
+        github_org = mt_client.get_org_from_server(discord_server_id)
+        if not github_org:
+            print(f"No GitHub org found for Discord server: {discord_server_id}")
+            return False
+        return mt_client.set_org_document(github_org, collection, document_id, data, merge)
+
+    # Handle org-scoped user stats
+    if collection == 'discord_users' and discord_server_id:
         github_org = mt_client.get_org_from_server(discord_server_id)
         if not github_org:
             print(f"No GitHub org found for Discord server: {discord_server_id}")
@@ -289,6 +305,14 @@ def update_document(collection: str, document_id: str, data: Dict[str, Any], dis
             print(f"No GitHub org found for Discord server: {discord_server_id}")
             return False
         return mt_client.update_org_document(github_org, collection, document_id, data)
+
+    # Handle org-scoped user stats
+    if collection == 'discord_users' and discord_server_id:
+        github_org = mt_client.get_org_from_server(discord_server_id)
+        if not github_org:
+            print(f"No GitHub org found for Discord server: {discord_server_id}")
+            return False
+        return mt_client.update_org_document(github_org, collection, document_id, data)
     
     # Handle user mappings (old 'discord' collection)
     if collection == 'discord':
@@ -312,6 +336,14 @@ def query_collection(collection: str, filters: Optional[Dict[str, Any]] = None, 
     if collection in ['repo_stats', 'pr_config', 'repository_labels']:
         if not discord_server_id:
             raise ValueError(f"discord_server_id required for org-scoped collection: {collection}")
+        github_org = mt_client.get_org_from_server(discord_server_id)
+        if not github_org:
+            print(f"No GitHub org found for Discord server: {discord_server_id}")
+            return {}
+        return mt_client.query_org_collection(github_org, collection, filters)
+
+    # Handle org-scoped user stats
+    if collection == 'discord_users' and discord_server_id:
         github_org = mt_client.get_org_from_server(discord_server_id)
         if not github_org:
             print(f"No GitHub org found for Discord server: {discord_server_id}")

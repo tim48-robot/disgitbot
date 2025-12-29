@@ -1,10 +1,12 @@
 import os
 import threading
 import time
+import requests
 from flask import Flask, redirect, url_for, jsonify, session
 from flask_dance.contrib.github import make_github_blueprint, github
 from dotenv import load_dotenv
 from werkzeug.middleware.proxy_fix import ProxyFix
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 load_dotenv()
 
@@ -34,9 +36,12 @@ def create_oauth_app():
     github_blueprint = make_github_blueprint(
         client_id=os.getenv("GITHUB_CLIENT_ID"),
         client_secret=os.getenv("GITHUB_CLIENT_SECRET"),
-        redirect_url=f"{base_url}/auth/callback"
+        redirect_url=f"{base_url}/auth/callback",
+        scope="read:org"
     )
     app.register_blueprint(github_blueprint, url_prefix="/login")
+
+    state_serializer = URLSafeTimedSerializer(app.secret_key, salt="github-app-install")
     
     @app.route("/")
     def index():
@@ -46,7 +51,9 @@ def create_oauth_app():
             "endpoints": {
                 "invite_bot": "/invite",
                 "setup": "/setup",
-                "github_auth": "/auth/start/<discord_user_id>"
+                "github_auth": "/auth/start/<discord_user_id>",
+                "github_app_install": "/github/app/install",
+                "github_app_setup_callback": "/github/app/setup"
             }
         })
 
@@ -94,8 +101,7 @@ def create_oauth_app():
             f"client_id={bot_client_id}&"
             f"permissions={permissions}&"
             f"integration_type=0&"
-            f"scope=bot+applications.commands&"
-            f"redirect_uri={base_url}/setup"
+            f"scope=bot+applications.commands"
         )
         
         # Enhanced landing page with clear instructions
@@ -153,16 +159,16 @@ def create_oauth_app():
                     <div class="step">
                         <strong>Step 1:</strong> Click "Add Bot to Discord" above
                     </div>
-                    <div class="step">
-                        <strong>Step 2:</strong> After adding the bot, visit this setup URL:
-                        <div class="code">{base_url}/setup</div>
-                    </div>
-                    <div class="step">
-                        <strong>Step 3:</strong> Enter your GitHub organization name (e.g. "your-org")
-                    </div>
-                    <div class="step">
+                <div class="step">
+                    <strong>Step 2:</strong> After adding the bot, visit this setup URL:
+                    <div class="code">{base_url}/setup</div>
+                </div>
+                <div class="step">
+                        <strong>Step 3:</strong> Install the GitHub App and select repositories
+                </div>
+                <div class="step">
                         <strong>Step 4:</strong> Users can link GitHub accounts with <span class="code">/link</span> in Discord
-                    </div>
+                </div>
                 </div>
 
                 <h3>Features:</h3>
@@ -202,6 +208,7 @@ def create_oauth_app():
             
             # Store user ID in session for callback
             session['discord_user_id'] = discord_user_id
+            session['oauth_flow'] = 'link'
             
             print(f"Starting OAuth for Discord user: {discord_user_id}")
             
@@ -214,13 +221,13 @@ def create_oauth_app():
     
     @app.route("/auth/callback")
     def github_callback():
-        """Handle GitHub OAuth callback - original working version"""
+        """Handle GitHub OAuth callback for user account linking."""
         try:
             discord_user_id = session.get('discord_user_id')
             
             if not discord_user_id:
                 return "Authentication failed: No Discord user session", 400
-            
+
             if not github.authorized:
                 print("GitHub OAuth not authorized")
                 with oauth_sessions_lock:
@@ -229,8 +236,7 @@ def create_oauth_app():
                         'error': 'GitHub authorization failed'
                     }
                 return "GitHub authorization failed", 400
-            
-            # Get GitHub user info
+
             resp = github.get("/user")
             if not resp.ok:
                 print(f"GitHub API call failed: {resp.status_code}")
@@ -240,10 +246,10 @@ def create_oauth_app():
                         'error': 'Failed to fetch GitHub user info'
                     }
                 return "Failed to fetch GitHub user information", 400
-            
+
             github_user = resp.json()
             github_username = github_user.get("login")
-            
+
             if not github_username:
                 print("No GitHub username found")
                 with oauth_sessions_lock:
@@ -252,17 +258,19 @@ def create_oauth_app():
                         'error': 'No GitHub username found'
                     }
                 return "Failed to get GitHub username", 400
-            
-            # Store successful result
+
             with oauth_sessions_lock:
                 oauth_sessions[discord_user_id] = {
                     'status': 'completed',
                     'github_username': github_username,
                     'github_user_data': github_user
                 }
-            
+
+            session.pop('oauth_flow', None)
+            session.pop('discord_user_id', None)
+
             print(f"OAuth completed for {github_username} (Discord: {discord_user_id})")
-            
+
             return f"""
             <html>
             <head><title>Authentication Successful</title></head>
@@ -279,23 +287,198 @@ def create_oauth_app():
             </body>
             </html>
             """
-            
+
         except Exception as e:
             print(f"Error in OAuth callback: {e}")
             return f"Authentication failed: {str(e)}", 500
-    
+
+    @app.route("/github/app/install")
+    def github_app_install():
+        """Redirect server owners to install the DisgitBot GitHub App."""
+        from flask import request
+
+        guild_id = request.args.get('guild_id')
+        guild_name = request.args.get('guild_name', 'your server')
+
+        if not guild_id:
+            return "Error: No Discord server information received", 400
+
+        app_slug = os.getenv("GITHUB_APP_SLUG")
+        if not app_slug:
+            return "Server configuration error: missing GITHUB_APP_SLUG", 500
+
+        state = state_serializer.dumps({'guild_id': str(guild_id), 'guild_name': guild_name})
+
+        install_url = f"https://github.com/apps/{app_slug}/installations/new?state={state}"
+        return redirect(install_url)
+
+    @app.route("/github/app/setup")
+    def github_app_setup():
+        """GitHub App 'Setup URL' callback: stores installation ID for a Discord server."""
+        from flask import request, render_template_string
+        from shared.firestore import get_mt_client
+        from datetime import datetime
+        from src.services.github_app_service import GitHubAppService
+
+        installation_id = request.args.get('installation_id')
+        state = request.args.get('state', '')
+
+        if not installation_id or not state:
+            return "Missing installation_id or state", 400
+
+        try:
+            payload = state_serializer.loads(state, max_age=60 * 30)
+        except SignatureExpired:
+            return "Setup link expired. Please restart setup from Discord.", 400
+        except BadSignature:
+            return "Invalid setup state. Please restart setup from Discord.", 400
+
+        guild_id = str(payload.get('guild_id', ''))
+        guild_name = payload.get('guild_name', 'your server')
+        if not guild_id:
+            return "Invalid setup state (missing guild_id). Please restart setup from Discord.", 400
+
+        gh_app = GitHubAppService()
+        installation = gh_app.get_installation(int(installation_id))
+        if not installation:
+            return "Failed to fetch installation details from GitHub.", 500
+
+        account = installation.get('account') or {}
+        github_account = account.get('login')
+        github_account_type = account.get('type')
+
+        github_org = github_account
+        is_personal_install = github_account_type == 'User'
+
+        mt_client = get_mt_client()
+        success = mt_client.set_server_config(guild_id, {
+            'github_org': github_org,
+            'github_installation_id': int(installation_id),
+            'github_account': github_account,
+            'github_account_type': github_account_type,
+            'setup_source': 'github_app',
+            'created_at': datetime.now().isoformat(),
+            'setup_completed': True
+        })
+
+        if not success:
+            return "Error: Failed to save configuration", 500
+
+        def trigger_initial_sync(org_name: str) -> bool:
+            """Trigger the GitHub Actions pipeline once after setup."""
+            token = os.getenv("GITHUB_TOKEN")
+            repo_owner = os.getenv("REPO_OWNER")
+            repo_name = os.getenv("REPO_NAME", "disgitbot")
+            ref = os.getenv("WORKFLOW_REF", "main")
+
+            if not token or not repo_owner:
+                print("Skipping pipeline trigger: missing GITHUB_TOKEN or REPO_OWNER")
+                return False
+
+            url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/actions/workflows/discord_bot_pipeline.yml/dispatches"
+            headers = {
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github+json",
+            }
+            payload = {
+                "ref": ref,
+                "inputs": {
+                    "organization": org_name
+                }
+            }
+
+            try:
+                resp = requests.post(url, headers=headers, json=payload, timeout=20)
+                if resp.status_code in (201, 204):
+                    existing_config = mt_client.get_server_config(guild_id) or {}
+                    mt_client.set_server_config(guild_id, {
+                        **existing_config,
+                        "initial_sync_triggered_at": datetime.now().isoformat()
+                    })
+                    return True
+                print(f"Failed to trigger pipeline: {resp.status_code} {resp.text[:200]}")
+            except Exception as exc:
+                print(f"Error triggering pipeline: {exc}")
+            return False
+
+        sync_triggered = trigger_initial_sync(github_org)
+
+        success_page = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>GitHub Connected!</title>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    max-width: 650px; margin: 50px auto; padding: 20px;
+                    background: #36393f; color: #dcddde;
+                }
+                .card {
+                    background: #2f3136; padding: 30px; border-radius: 8px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.2); text-align: center;
+                }
+                h1 { color: #43b581; margin-top: 0; }
+                .command {
+                    background: #40444b; padding: 10px; border-radius: 4px;
+                    font-family: monospace; margin: 10px 0;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h1>GitHub Connected!</h1>
+                <p><strong>{{ guild_name }}</strong> is now connected to GitHub <strong>{{ github_org }}</strong>.</p>
+                {% if is_personal_install %}
+                <p style="color: #faa61a; font-weight: 600;">
+                    Heads up: you installed the app on a personal account. If you need org repos,
+                    reinstall the app on your organization.
+                </p>
+                {% endif %}
+
+                <h3>Next Steps in Discord</h3>
+                <p>1) Users link their GitHub accounts:</p>
+                <div class="command">/link</div>
+                <p>2) Configure custom roles:</p>
+                <div class="command">/configure roles</div>
+                {% if sync_triggered %}
+                <p>✅ Initial sync started. Stats will appear shortly.</p>
+                {% else %}
+                <p>⏳ Initial sync will run on the next scheduled pipeline.</p>
+                {% endif %}
+                <p>3) Try these commands:</p>
+                <div class="command">/getstats</div>
+                <div class="command">/halloffame</div>
+            </div>
+        </body>
+        </html>
+        """
+
+        return render_template_string(
+            success_page,
+            guild_name=guild_name,
+            github_org=github_org,
+            is_personal_install=is_personal_install,
+            sync_triggered=sync_triggered
+        )
+
     @app.route("/setup")
     def setup():
         """Setup page after Discord bot is added to server"""
         from flask import request, render_template_string
-        
+        from urllib.parse import urlencode
+
         # Get Discord server info from OAuth callback
         guild_id = request.args.get('guild_id')
         guild_name = request.args.get('guild_name', 'your server')
-        
+
         if not guild_id:
             return "Error: No Discord server information received", 400
-        
+
+        github_app_install_url = f"{base_url}/github/app/install?{urlencode({'guild_id': guild_id, 'guild_name': guild_name})}"
+
         setup_page = """
         <!DOCTYPE html>
         <html>
@@ -304,57 +487,51 @@ def create_oauth_app():
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <style>
-                body { 
+                body {
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                     max-width: 600px; margin: 50px auto; padding: 20px;
                     background: #36393f; color: #dcddde;
                 }
-                .card { 
+                .card {
                     background: #2f3136; padding: 30px; border-radius: 8px;
                     box-shadow: 0 2px 10px rgba(0,0,0,0.2);
                 }
                 .form-group { margin: 20px 0; }
                 label { display: block; margin-bottom: 8px; font-weight: 600; }
-                input[type="text"] { 
+                input[type="text"] {
                     width: 100%; padding: 12px; border: 1px solid #40444b;
                     background: #40444b; color: #dcddde; border-radius: 4px;
                     font-size: 16px; box-sizing: border-box;
                 }
-                input[type="text"]:focus { 
-                    outline: none; border-color: #5865f2; 
+                input[type="text"]:focus {
+                    outline: none; border-color: #5865f2;
                 }
-                .btn { 
+                .btn {
                     background: #5865f2; color: white; padding: 12px 24px;
                     border: none; border-radius: 4px; font-weight: 600;
                     cursor: pointer; font-size: 16px; width: 100%;
                 }
                 .btn:hover { background: #4752c4; }
                 h1 { color: #ffffff; margin-top: 0; }
-                .success { color: #43b581; }
                 .example { color: #b9bbbe; font-size: 0.9em; }
+                .section-title { margin-top: 30px; }
             </style>
         </head>
         <body>
             <div class="card">
                 <h1>DisgitBot Added Successfully!</h1>
                 <p>Bot has been added to <strong>{{ guild_name }}</strong></p>
-                
-                <form action="/complete_setup" method="POST">
-                    <input type="hidden" name="guild_id" value="{{ guild_id }}">
-                    
-                    <div class="form-group">
-                        <label for="github_org">GitHub Organization Name:</label>
-                        <input type="text" id="github_org" name="github_org" 
-                               placeholder="e.g. ruxailab" required>
-                        <div class="example">
-                            Enter the GitHub organization name you want to track.<br>
-                            This is the name that appears in GitHub URLs: github.com/<strong>your-org</strong>/repo-name
-                        </div>
-                    </div>
-                    
-                    <button type="submit" class="btn">Complete Setup</button>
-                </form>
-                
+
+                <h3 class="section-title">Recommended: Install the GitHub App</h3>
+                <p>Install the DisgitBot GitHub App and pick which repositories to track.</p>
+                <a class="btn" href="{{ github_app_install_url }}">Install GitHub App</a>
+
+                <h3 class="section-title">Manual Setup (disabled)</h3>
+                <p class="example">
+                    Manual setup is disabled in the hosted version. Please use
+                    <strong>Install GitHub App</strong> above to connect your repositories.
+                </p>
+
                 <p style="margin-top: 30px; font-size: 0.9em; color: #b9bbbe;">
                     After setup, users can link their GitHub accounts using <code>/link</code> in Discord.
                 </p>
@@ -362,8 +539,13 @@ def create_oauth_app():
         </body>
         </html>
         """
-        
-        return render_template_string(setup_page, guild_id=guild_id, guild_name=guild_name)
+
+        return render_template_string(
+            setup_page,
+            guild_id=guild_id,
+            guild_name=guild_name,
+            github_app_install_url=github_app_install_url
+        )
     
     @app.route("/complete_setup", methods=["POST"])
     def complete_setup():
@@ -373,7 +555,10 @@ def create_oauth_app():
         from datetime import datetime
         
         guild_id = request.form.get('guild_id')
-        github_org = request.form.get('github_org', '').strip()
+        selected_org = request.form.get('github_org', '').strip()
+        manual_org = request.form.get('manual_org', '').strip()
+        github_org = manual_org or selected_org
+        setup_source = request.form.get('setup_source', 'manual').strip() or 'manual'
         
         if not guild_id or not github_org:
             return "Error: Missing required information", 400
@@ -387,6 +572,7 @@ def create_oauth_app():
             mt_client = get_mt_client()
             success = mt_client.set_server_config(guild_id, {
                 'github_org': github_org,
+                'setup_source': setup_source,
                 'created_at': datetime.now().isoformat(),
                 'setup_completed': True
             })
@@ -394,12 +580,6 @@ def create_oauth_app():
             if not success:
                 return "Error: Failed to save configuration", 500
             
-            # Trigger initial data collection for this organization
-            try:
-                trigger_data_pipeline_for_org(github_org)
-            except Exception as e:
-                print(f"Warning: Failed to trigger initial data collection: {e}")
-                # Don't fail setup if pipeline trigger fails
             
             success_page = """
             <!DOCTYPE html>
@@ -493,38 +673,3 @@ def wait_for_username(discord_user_id, max_wait_time=300):
             del oauth_sessions[discord_user_id]
     
     return None
-
-def trigger_data_pipeline_for_org(github_org):
-    """Trigger the GitHub Actions workflow to collect data for a specific organization."""
-    import requests
-    
-    # GitHub API endpoint for triggering workflow_dispatch
-    repo_owner = os.getenv('REPO_OWNER', 'ruxailab')
-    repo_name = "disgitbot"
-    workflow_id = "discord_bot_pipeline.yml"
-    
-    url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/actions/workflows/{workflow_id}/dispatches"
-    
-    headers = {
-        "Authorization": f"token {os.getenv('GITHUB_TOKEN')}",
-        "Accept": "application/vnd.github.v3+json"
-    }
-    
-    payload = {
-        "ref": "main",
-        "inputs": {
-            "organization": github_org
-        }
-    }
-    
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        if response.status_code == 204:
-            print(f"Successfully triggered data pipeline for {github_org}")
-            return True
-        else:
-            print(f"Failed to trigger pipeline for {github_org}. Status: {response.status_code}")
-            return False
-    except Exception as e:
-        print(f"Error triggering pipeline for {github_org}: {e}")
-        return False
