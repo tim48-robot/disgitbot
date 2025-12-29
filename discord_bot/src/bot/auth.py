@@ -351,7 +351,9 @@ def create_oauth_app():
         is_personal_install = github_account_type == 'User'
 
         mt_client = get_mt_client()
+        existing_config = mt_client.get_server_config(guild_id) or {}
         success = mt_client.set_server_config(guild_id, {
+            **existing_config,
             'github_org': github_org,
             'github_installation_id': int(installation_id),
             'github_account': github_account,
