@@ -317,7 +317,7 @@ def create_oauth_app():
         """GitHub App 'Setup URL' callback: stores installation ID for a Discord server."""
         from flask import request, render_template_string
         from shared.firestore import get_mt_client
-        from datetime import datetime
+        from datetime import datetime, timedelta
         from src.services.github_app_service import GitHubAppService
 
         installation_id = request.args.get('installation_id')
@@ -375,6 +375,17 @@ def create_oauth_app():
                 print("Skipping pipeline trigger: missing GITHUB_TOKEN or REPO_OWNER")
                 return False
 
+            existing_config = mt_client.get_server_config(guild_id) or {}
+            last_trigger = existing_config.get("initial_sync_triggered_at")
+            if last_trigger:
+                try:
+                    last_dt = datetime.fromisoformat(last_trigger)
+                    if datetime.now() - last_dt < timedelta(minutes=10):
+                        print("Skipping pipeline trigger: recent sync already triggered")
+                        return False
+                except ValueError:
+                    pass
+
             url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/actions/workflows/discord_bot_pipeline.yml/dispatches"
             headers = {
                 "Authorization": f"token {token}",
@@ -390,7 +401,6 @@ def create_oauth_app():
             try:
                 resp = requests.post(url, headers=headers, json=payload, timeout=20)
                 if resp.status_code in (201, 204):
-                    existing_config = mt_client.get_server_config(guild_id) or {}
                     mt_client.set_server_config(guild_id, {
                         **existing_config,
                         "initial_sync_triggered_at": datetime.now().isoformat()
