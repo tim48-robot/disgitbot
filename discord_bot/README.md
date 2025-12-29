@@ -124,16 +124,14 @@ cp discord_bot/config/.env.example discord_bot/config/.env
 
 **Your `.env` file needs these values:**
 - `DISCORD_BOT_TOKEN=` (Discord bot authentication)
+- `GITHUB_TOKEN=` (Github API access)
 - `GITHUB_CLIENT_ID=` (GitHub OAuth app ID)
 - `GITHUB_CLIENT_SECRET=` (GitHub OAuth app secret)
 - `GITHUB_APP_ID=` (GitHub App ID)
 - `GITHUB_APP_PRIVATE_KEY_B64=` (GitHub App private key, base64)
 - `GITHUB_APP_SLUG=` (GitHub App slug)
 - `OAUTH_BASE_URL=` (Your Cloud Run URL - set in Step 4)
-
-**Also required for PR review tooling or legacy single-org flow:**
-- `GITHUB_TOKEN=` (PAT for PR review or legacy single-org pipeline)
-- `REPO_OWNER=` (Org name for legacy single-org pipeline)
+- `REPO_OWNER=` (Owner of the Disgitbot repo that hosts the workflow dispatch. Ex: ruxailab)
 
 **Additional files you need:**
 - `discord_bot/config/credentials.json` (Firebase/Google Cloud credentials)
@@ -258,7 +256,7 @@ If you plan to run GitHub Actions from branches other than `main`, also add the 
 - `.env` file: `GITHUB_TOKEN=your_token_here`
 - GitHub Secret: `GH_TOKEN`
 
-**What this does:** Allows PR review tooling and legacy single-org workflows to access the GitHub API.
+**What this does:** Allows the bot to access dispatch the Github Actions Workflow
 
 1. **Go to GitHub Token Settings:** https://github.com/settings/tokens
 2. **Create New Token:**
@@ -376,13 +374,13 @@ If you plan to run GitHub Actions from branches other than `main`, also add the 
 - `.env` file: `REPO_OWNER=your_org_name`
 - GitHub Secret: `REPO_OWNER`
 
-**What this does:** Tells the bot which GitHub organization's repositories to monitor for contributions.
+**What this does:** Tells the bot which Disgitbot repo owns the GitHub Actions workflow (used for workflow dispatch). The org you track comes from GitHub App installation during `/setup`.
 
-1. **Find Your Organization Name:**
-   - Go to your organization's repositories page (example: `https://github.com/orgs/ruxailab/repositories`)
-   - The organization name is the part after `/orgs/` (example: `ruxailab`)
+1. **Find the Disgitbot repo owner:**
+   - Example repo: `https://github.com/ruxailab/disgitbot`
+   - The owner is the first path segment (`ruxailab`)
 2. **Set in Configuration:**
-   - **Add to `.env`:** `REPO_OWNER=your_org_name` (example: `REPO_OWNER=ruxailab`)
+   - **Add to `.env`:** `REPO_OWNER=your_repo_owner` (example: `REPO_OWNER=ruxailab`)
    - **Add to GitHub Secrets:** Create secret named `REPO_OWNER` with the same value
    - **Important:** Use ONLY the organization name, NOT the full URL
 
@@ -431,7 +429,7 @@ The deployment script will:
    # Trigger the data pipeline to fetch data and assign roles
    gh workflow run discord_bot_pipeline.yml -f organization=<your_org>
    ```
-   Use the same organization name you configured in `REPO_OWNER` when invoking the workflow (for example `-f organization=ruxailab`). This runs the full data pipeline, pushes metrics to Firestore, and refreshes Discord roles/channels for every registered server.
+   Use the GitHub org you want to sync (the org where the GitHub App is installed), for example `-f organization=your-org`. This runs the full data pipeline, pushes metrics to Firestore, and refreshes Discord roles/channels for every registered server connected to that org.
 
 ---
 
