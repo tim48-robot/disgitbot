@@ -1,6 +1,7 @@
 import os
 import threading
 import time
+import requests
 from flask import Flask, redirect, url_for, jsonify, session
 from flask_dance.contrib.github import make_github_blueprint, github
 from dotenv import load_dotenv
@@ -363,6 +364,45 @@ def create_oauth_app():
         if not success:
             return "Error: Failed to save configuration", 500
 
+        def trigger_initial_sync(org_name: str) -> bool:
+            """Trigger the GitHub Actions pipeline once after setup."""
+            token = os.getenv("GITHUB_TOKEN")
+            repo_owner = os.getenv("REPO_OWNER")
+            repo_name = os.getenv("REPO_NAME", "disgitbot")
+            ref = os.getenv("WORKFLOW_REF", "main")
+
+            if not token or not repo_owner:
+                print("Skipping pipeline trigger: missing GITHUB_TOKEN or REPO_OWNER")
+                return False
+
+            url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/actions/workflows/discord_bot_pipeline.yml/dispatches"
+            headers = {
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github+json",
+            }
+            payload = {
+                "ref": ref,
+                "inputs": {
+                    "organization": org_name
+                }
+            }
+
+            try:
+                resp = requests.post(url, headers=headers, json=payload, timeout=20)
+                if resp.status_code in (201, 204):
+                    existing_config = mt_client.get_server_config(guild_id) or {}
+                    mt_client.set_server_config(guild_id, {
+                        **existing_config,
+                        "initial_sync_triggered_at": datetime.now().isoformat()
+                    })
+                    return True
+                print(f"Failed to trigger pipeline: {resp.status_code} {resp.text[:200]}")
+            except Exception as exc:
+                print(f"Error triggering pipeline: {exc}")
+            return False
+
+        sync_triggered = trigger_initial_sync(github_org)
+
         success_page = """
         <!DOCTYPE html>
         <html>
@@ -403,6 +443,11 @@ def create_oauth_app():
                 <div class="command">/link</div>
                 <p>2) Configure custom roles:</p>
                 <div class="command">/configure roles</div>
+                {% if sync_triggered %}
+                <p>✅ Initial sync started. Stats will appear shortly.</p>
+                {% else %}
+                <p>⏳ Initial sync will run on the next scheduled pipeline.</p>
+                {% endif %}
                 <p>3) Try these commands:</p>
                 <div class="command">/getstats</div>
                 <div class="command">/halloffame</div>
@@ -415,7 +460,8 @@ def create_oauth_app():
             success_page,
             guild_name=guild_name,
             github_org=github_org,
-            is_personal_install=is_personal_install
+            is_personal_install=is_personal_install,
+            sync_triggered=sync_triggered
         )
 
     @app.route("/setup")
