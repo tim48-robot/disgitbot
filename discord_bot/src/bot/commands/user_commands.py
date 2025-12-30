@@ -190,7 +190,6 @@ class UserCommands:
                     return
 
                 mt_client.set_user_mapping(discord_user_id, {})
-                set_document('discord_users', discord_user_id, {}, discord_server_id=discord_server_id)
                 await self._safe_followup(interaction, "Successfully unlinked your Discord account from your GitHub username.")
                 print(f"Unlinked Discord user {interaction.user.name}")
 

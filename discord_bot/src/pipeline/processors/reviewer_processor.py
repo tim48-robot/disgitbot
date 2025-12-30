@@ -7,7 +7,7 @@ Functions for processing contributor data to generate reviewer pools.
 import time
 from typing import Dict, Any, List, Optional
 
-from shared.firestore import get_mt_client, get_document
+from shared.firestore import get_mt_client
 
 
 def generate_reviewer_pool(
@@ -21,12 +21,12 @@ def generate_reviewer_pool(
     if not all_contributions:
         return {}
 
-    if github_org:
-        existing_config = (
-            get_mt_client().get_org_document(github_org, 'pr_config', 'reviewers') or {}
-        )
-    else:
-        existing_config = get_document('pr_config', 'reviewers') or {}
+    if not github_org:
+        raise ValueError("github_org is required to load reviewer config")
+
+    existing_config = (
+        get_mt_client().get_org_document(github_org, 'pr_config', 'reviewers') or {}
+    )
     manual_reviewers = existing_config.get('manual_reviewers', [])
 
     # Get contributors sorted by PR count (all-time)
