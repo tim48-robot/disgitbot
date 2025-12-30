@@ -66,7 +66,7 @@ def create_oauth_app():
             mt_client = get_mt_client()
 
             # Get all servers
-            servers_ref = mt_client.db.collection('servers')
+            servers_ref = mt_client.db.collection('discord_servers')
             servers = []
 
             for doc in servers_ref.stream():
@@ -208,7 +208,6 @@ def create_oauth_app():
             
             # Store user ID in session for callback
             session['discord_user_id'] = discord_user_id
-            session['oauth_flow'] = 'link'
             
             print(f"Starting OAuth for Discord user: {discord_user_id}")
             
@@ -262,11 +261,9 @@ def create_oauth_app():
             with oauth_sessions_lock:
                 oauth_sessions[discord_user_id] = {
                     'status': 'completed',
-                    'github_username': github_username,
-                    'github_user_data': github_user
+                    'github_username': github_username
                 }
 
-            session.pop('oauth_flow', None)
             session.pop('discord_user_id', None)
 
             print(f"OAuth completed for {github_username} (Discord: {discord_user_id})")
