@@ -8,6 +8,7 @@ import discord
 from discord import app_commands
 import asyncio
 import threading
+import datetime
 from ...services.role_service import RoleService
 from ..auth import get_github_username_for_user, wait_for_username
 from shared.firestore import get_document, set_document, get_mt_client
@@ -118,7 +119,7 @@ class UserCommands:
                     await self._safe_followup(
                         interaction,
                         f"Successfully linked to GitHub user: `{github_username}`\n"
-                        f"Stats and roles update on the next sync cycle."
+                        f"Use `/getstats` to view your contribution data."
                     )
                 else:
                     await self._safe_followup(interaction, "Authentication timed out or failed. Please try again.")
@@ -130,6 +131,47 @@ class UserCommands:
                 self.verification_lock.release()
         
         return link
+
+    def _empty_user_stats(self) -> dict:
+        """Return an empty stats payload for users with no synced data yet."""
+        current_month = datetime.datetime.utcnow().strftime("%B")
+        return {
+            "pr_count": 0,
+            "issues_count": 0,
+            "commits_count": 0,
+            "stats": {
+                "current_month": current_month,
+                "last_updated": "Not synced yet",
+                "pr": {
+                    "daily": 0,
+                    "weekly": 0,
+                    "monthly": 0,
+                    "all_time": 0,
+                    "current_streak": 0,
+                    "longest_streak": 0,
+                    "avg_per_day": 0
+                },
+                "issue": {
+                    "daily": 0,
+                    "weekly": 0,
+                    "monthly": 0,
+                    "all_time": 0,
+                    "current_streak": 0,
+                    "longest_streak": 0,
+                    "avg_per_day": 0
+                },
+                "commit": {
+                    "daily": 0,
+                    "weekly": 0,
+                    "monthly": 0,
+                    "all_time": 0,
+                    "current_streak": 0,
+                    "longest_streak": 0,
+                    "avg_per_day": 0
+                }
+            },
+            "rankings": {}
+        }
     
     def _unlink_command(self):
         """Create the unlink command."""
@@ -189,8 +231,13 @@ class UserCommands:
                     await self._safe_followup(interaction, "Your Discord account is not linked to a GitHub username. Use `/link` to link it.")
                     return
 
-                # Fetch org-scoped stats for this server
-                user_data = get_document('discord_users', user_id, discord_server_id) or {}
+                github_org = mt_client.get_org_from_server(discord_server_id)
+                if not github_org:
+                    await self._safe_followup(interaction, "This server is not configured yet. Run `/setup` first.")
+                    return
+
+                # Fetch org-scoped stats for this GitHub username
+                user_data = mt_client.get_org_document(github_org, 'contributions', github_username) or self._empty_user_stats()
 
                 # Get stats and create embed
                 embed = await self._create_stats_embed(user_data, github_username, stats_type, interaction)
