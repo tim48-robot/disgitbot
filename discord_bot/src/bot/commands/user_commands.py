@@ -132,7 +132,7 @@ class UserCommands:
         
         return link
 
-    def _empty_user_stats(self) -> dict:
+    def _empty_user_stats(self, last_updated: str | None = None) -> dict:
         """Return an empty stats payload for users with no synced data yet."""
         current_month = datetime.datetime.utcnow().strftime("%B")
         return {
@@ -141,7 +141,7 @@ class UserCommands:
             "commits_count": 0,
             "stats": {
                 "current_month": current_month,
-                "last_updated": "Not synced yet",
+                "last_updated": last_updated or "Not synced yet",
                 "pr": {
                     "daily": 0,
                     "weekly": 0,
@@ -236,7 +236,11 @@ class UserCommands:
                     return
 
                 # Fetch org-scoped stats for this GitHub username
-                user_data = mt_client.get_org_document(github_org, 'contributions', github_username) or self._empty_user_stats()
+                user_data = mt_client.get_org_document(github_org, 'contributions', github_username)
+                if not user_data:
+                    metrics = get_document('repo_stats', 'metrics', discord_server_id)
+                    last_updated = metrics.get('last_updated') if metrics else None
+                    user_data = self._empty_user_stats(last_updated)
 
                 # Get stats and create embed
                 embed = await self._create_stats_embed(user_data, github_username, stats_type, interaction)
