@@ -165,6 +165,7 @@ ORG_SCOPED_COLLECTIONS = {
 }
 GLOBAL_COLLECTIONS = {
     'global_config',
+    'notification_config',
 }
 
 def get_document(collection: str, document_id: str, discord_server_id: str = None, github_org: str = None) -> Optional[Dict[str, Any]]:
