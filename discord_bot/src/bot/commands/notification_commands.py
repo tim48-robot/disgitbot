@@ -222,7 +222,11 @@ class NotificationCommands:
                 
                 # Find PR automation webhook for THIS server
                 pr_webhook_entry = next((w for w in webhooks_list if w.get('type') == 'pr_automation' and w.get('server_id') == str(interaction.guild_id)), None)
-                pr_webhook = pr_webhook_entry['url'] if pr_webhook_entry else webhook_config.get('pr_automation_webhook_url')
+                pr_webhook = None
+                if pr_webhook_entry:
+                    pr_webhook = pr_webhook_entry.get('url')
+                elif webhook_config:
+                    pr_webhook = webhook_config.get('pr_automation_webhook_url')
                 
                 pr_status = "Configured" if pr_webhook else "Not configured"
                 embed.add_field(
@@ -233,7 +237,11 @@ class NotificationCommands:
                 
                 # Find CI/CD webhook for THIS server
                 cicd_webhook_entry = next((w for w in webhooks_list if w.get('type') == 'cicd' and w.get('server_id') == str(interaction.guild_id)), None)
-                cicd_webhook = cicd_webhook_entry['url'] if cicd_webhook_entry else webhook_config.get('cicd_webhook_url')
+                cicd_webhook = None
+                if cicd_webhook_entry:
+                    cicd_webhook = cicd_webhook_entry.get('url')
+                elif webhook_config:
+                    cicd_webhook = webhook_config.get('cicd_webhook_url')
                 
                 cicd_status = "Configured" if cicd_webhook else "Not configured"
                 embed.add_field(

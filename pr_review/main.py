@@ -38,10 +38,10 @@ class PRReviewSystem:
         """Initialize the PR review system"""
         try:
             # Initialize components
-            self.github = GitHubClient()
-            self.metrics = MetricsCalculator()
-            self.labeler = AIPRLabeler()
-            self.assigner = None # Will be initialized per request
+            self.github_client = GitHubClient()
+            self.metrics_calculator = MetricsCalculator()
+            self.ai_labeler = AIPRLabeler()
+            self.reviewer_assigner = None # Will be initialized per request
 
             
             logger.info("PR Review System initialized successfully")
@@ -66,13 +66,13 @@ class PRReviewSystem:
             logger.info(f"Processing PR #{pr_number} in {repo}")
             
             # Step 1: Get PR details and diff
-            pr_details = self.github.get_pull_request_details(repo, pr_number)
-            pr_diff = self.github.get_pull_request_diff(repo, pr_number)
-            pr_files = self.github.get_pull_request_files(repo, pr_number)
+            pr_details = self.github_client.get_pull_request_details(repo, pr_number)
+            pr_diff = self.github_client.get_pull_request_diff(repo, pr_number)
+            pr_files = self.github_client.get_pull_request_files(repo, pr_number)
             
             # Step 2: Calculate metrics
             logger.info("Calculating PR metrics...")
-            metrics = self.metrics.calculate_pr_metrics(pr_diff, pr_files)
+            metrics = self.metrics_calculator.calculate_pr_metrics(pr_diff, pr_files)
             
             # Step 3: AI-based label prediction
             logger.info("Predicting labels with AI...")
@@ -82,13 +82,13 @@ class PRReviewSystem:
                 'diff': pr_diff,
                 'metrics': metrics
             }
-            predicted_labels = self.labeler.predict_labels(pr_data, repo)
+            predicted_labels = self.ai_labeler.predict_labels(pr_data, repo)
             
             # Step 4: Assign reviewers
             logger.info("Assigning reviewers...")
             repo_owner = repo.split('/')[0] if '/' in repo else repo
-            self.assigner = ReviewerAssigner(github_org=repo_owner)
-            reviewer_assignments = self.assigner.assign_reviewers(pr_data, repo)
+            self.reviewer_assigner = ReviewerAssigner(github_org=repo_owner)
+            reviewer_assignments = self.reviewer_assigner.assign_reviewers(pr_data, repo)
             
             # Step 5: Skip AI review generation (not needed per mentor requirements)
             ai_review = {"summary": "AI review disabled - focusing on metrics and automation"}
@@ -98,20 +98,20 @@ class PRReviewSystem:
                 label_names = [label['name'] for label in predicted_labels if label['confidence'] >= 0.5]
                 if label_names:
                     logger.info(f"Applying labels: {label_names}")
-                    self.github.add_labels_to_pull_request(repo, pr_number, label_names)
+                    self.github_client.add_labels_to_pull_request(repo, pr_number, label_names)
             
             # Step 7: Request reviewers
             if reviewer_assignments.get('reviewers'):
                 reviewers = [r['username'] for r in reviewer_assignments['reviewers']]
                 logger.info(f"Requesting reviewers: {reviewers}")
-                self.github.request_reviewers(repo, pr_number, reviewers)
+                self.github_client.request_reviewers(repo, pr_number, reviewers)
             
             # Step 8: Post comprehensive comment
             comment_body = self._build_comprehensive_comment(
                 metrics, predicted_labels, reviewer_assignments, ai_review
             )
             
-            self.github.create_issue_comment(repo, pr_number, comment_body)
+            self.github_client.create_issue_comment(repo, pr_number, comment_body)
             
             # Prepare results
             results = {
