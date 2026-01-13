@@ -459,7 +459,7 @@ def create_oauth_app():
                                 color=0x43b581
                             )
                             embed.add_field(name="Next Steps", value="1. Use `/link` to connect your GitHub account\n2. Configure webhooks with `/set_webhook`", inline=False)
-                            embed.set_footer(text="Powered by DisgitBot SaaS")
+                            embed.set_footer(text="Powered by DisgitBot")
                             
                             await channel.send(embed=embed)
                             print(f"Sent setup success notification to guild {guild_id}")
