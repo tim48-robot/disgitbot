@@ -16,19 +16,20 @@ RUN apt-get update && \
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 
+# Copy pr_review package (copied into build context by deploy script)
+COPY pr_review ./pr_review
+
 # Upgrade pip to latest version to avoid upgrade notices
 RUN pip install --upgrade pip
 
-RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt
+# Install dependencies from both requirements files
+RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt -r pr_review/requirements.txt
 
 # Create config directory and empty credentials file (will be overwritten by volume mount)
 RUN mkdir -p /app/config && echo "{}" > /app/config/credentials.json
 
 # Copy shared package first (copied into build context by deploy script)
 COPY shared ./shared
-
-# Copy pr_review package (copied into build context by deploy script)
-COPY pr_review ./pr_review
 
 # Set PYTHONPATH to include shared packages (needed for from shared.firestore import ...)
 ENV PYTHONPATH=/app:$PYTHONPATH
