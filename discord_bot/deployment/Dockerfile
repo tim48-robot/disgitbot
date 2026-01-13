@@ -27,6 +27,9 @@ RUN mkdir -p /app/config && echo "{}" > /app/config/credentials.json
 # Copy shared package first (copied into build context by deploy script)
 COPY shared ./shared
 
+# Copy pr_review package (copied into build context by deploy script)
+COPY pr_review ./pr_review
+
 # Set PYTHONPATH to include shared packages (needed for from shared.firestore import ...)
 ENV PYTHONPATH=/app:$PYTHONPATH
 

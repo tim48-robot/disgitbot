@@ -727,6 +727,15 @@ main() {
         print_warning "Shared directory not found - skipping shared copy"
     fi
     
+    # Copy pr_review directory into build context for PR automation
+    print_step "Copying pr_review directory into build context..."
+    if [ -d "$(dirname "$ROOT_DIR")/pr_review" ]; then
+        cp -r "$(dirname "$ROOT_DIR")/pr_review" "$ROOT_DIR/pr_review"
+        print_success "pr_review directory copied successfully"
+    else
+        print_warning "pr_review directory not found - skipping pr_review copy"
+    fi
+    
     # Use Cloud Build to build and push the image
     gcloud builds submit \
       --tag gcr.io/$PROJECT_ID/$SERVICE_NAME:latest \
@@ -738,6 +747,10 @@ main() {
     if [ -d "$ROOT_DIR/shared" ]; then
         rm -rf "$ROOT_DIR/shared"
         print_step "Cleaned up temporary shared directory"
+    fi
+    if [ -d "$ROOT_DIR/pr_review" ]; then
+        rm -rf "$ROOT_DIR/pr_review"
+        print_step "Cleaned up temporary pr_review directory"
     fi
     print_success "Build completed and temporary files cleaned up!"
     

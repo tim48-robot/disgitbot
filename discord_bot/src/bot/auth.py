@@ -157,16 +157,8 @@ def create_oauth_app():
             
             # 4. Trigger PR automation in background thread
             def run_pr_automation():
-                import sys
-                from pathlib import Path
-                
-                # Add pr_review to path
-                pr_review_path = Path(__file__).parent.parent.parent.parent.parent / "pr_review"
-                if str(pr_review_path) not in sys.path:
-                    sys.path.insert(0, str(pr_review_path))
-                
                 try:
-                    from main import PRReviewSystem
+                    from pr_review.main import PRReviewSystem
                     
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
