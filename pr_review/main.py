@@ -16,12 +16,22 @@ root_dir = Path(__file__).parent.parent
 if str(root_dir) not in sys.path:
     sys.path.append(str(root_dir))
 
-from config import GITHUB_TOKEN, GOOGLE_API_KEY, REPO_OWNER
-from utils.github_client import GitHubClient
-from utils.metrics_calculator import MetricsCalculator
-from utils.ai_pr_labeler import AIPRLabeler
-from utils.reviewer_assigner import ReviewerAssigner
-from utils.design_formatter import format_design_analysis, format_metrics_summary
+try:
+    # When run as a package (from pr_review.main import ...)
+    from pr_review.config import GITHUB_TOKEN, GOOGLE_API_KEY, REPO_OWNER
+    from pr_review.utils.github_client import GitHubClient
+    from pr_review.utils.metrics_calculator import MetricsCalculator
+    from pr_review.utils.ai_pr_labeler import AIPRLabeler
+    from pr_review.utils.reviewer_assigner import ReviewerAssigner
+    from pr_review.utils.design_formatter import format_design_analysis, format_metrics_summary
+except ImportError:
+    # When run standalone (python main.py)
+    from config import GITHUB_TOKEN, GOOGLE_API_KEY, REPO_OWNER
+    from utils.github_client import GitHubClient
+    from utils.metrics_calculator import MetricsCalculator
+    from utils.ai_pr_labeler import AIPRLabeler
+    from utils.reviewer_assigner import ReviewerAssigner
+    from utils.design_formatter import format_design_analysis, format_metrics_summary
 
 
 # Configure logging
