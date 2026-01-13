@@ -473,6 +473,10 @@ def create_oauth_app():
                 await client.start(token)
             except Exception as e:
                 print(f"Failed to start Discord client for notification: {e}")
+            finally:
+                # Ensure client is closed even if start() fails
+                if not client.is_closed():
+                    await client.close()
 
         def trigger_data_pipeline_for_org(github_org):
             # Placeholder for triggering a data pipeline for the given GitHub organization

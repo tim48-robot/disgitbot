@@ -235,13 +235,15 @@ class NotificationService:
             return urls
         except Exception as e:
             logger.error(f"Failed to get webhook URL for {notification_type}: {e}")
-            return None
+            return []
     
     async def _send_webhook(self, webhook_url: str, payload: Dict[str, Any]) -> bool:
         """Send payload to Discord webhook."""
+        session_created_here = False
         try:
             if not self.session:
                 self.session = aiohttp.ClientSession()
+                session_created_here = True
             
             async with self.session.post(
                 webhook_url,
@@ -258,6 +260,11 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Failed to send webhook: {e}")
             return False
+        finally:
+            # Clean up session if we created it here (not using context manager)
+            if session_created_here and self.session:
+                await self.session.close()
+                self.session = None
 
 class WebhookManager:
     """Manages webhook URL configuration and repository monitoring."""
