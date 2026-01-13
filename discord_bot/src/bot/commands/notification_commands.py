@@ -39,6 +39,18 @@ class NotificationCommands:
             await interaction.response.defer(ephemeral=True)
             
             try:
+                # Check if setup is completed first
+                from shared.firestore import get_mt_client
+                mt_client = get_mt_client()
+                server_config = mt_client.get_server_config(str(interaction.guild_id)) or {}
+                
+                if not server_config.get('setup_completed'):
+                    await interaction.followup.send(
+                        "⚠️ Please complete `/setup` first before configuring webhooks.",
+                        ephemeral=True
+                    )
+                    return
+                
                 # Validate webhook URL format
                 if not self._is_valid_webhook_url(webhook_url):
                     await interaction.followup.send(
@@ -250,11 +262,18 @@ class NotificationCommands:
                     inline=True
                 )
                 
-                # Last updated
-                if webhook_config and webhook_config.get('last_updated'):
+                # Last updated - show most recent webhook update for THIS server
+                webhook_updates = []
+                if pr_webhook_entry and pr_webhook_entry.get('last_updated'):
+                    webhook_updates.append(pr_webhook_entry['last_updated'])
+                if cicd_webhook_entry and cicd_webhook_entry.get('last_updated'):
+                    webhook_updates.append(cicd_webhook_entry['last_updated'])
+                
+                if webhook_updates:
+                    latest_update = max(webhook_updates)
                     embed.add_field(
                         name="Last Updated",
-                        value=webhook_config['last_updated'],
+                        value=latest_update,
                         inline=False
                     )
                 
