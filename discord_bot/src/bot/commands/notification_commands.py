@@ -46,7 +46,7 @@ class NotificationCommands:
                 
                 if not server_config.get('setup_completed'):
                     await interaction.followup.send(
-                        "⚠️ Please complete `/setup` first before configuring webhooks.",
+                        "Please complete `/setup` first before configuring webhooks.",
                         ephemeral=True
                     )
                     return

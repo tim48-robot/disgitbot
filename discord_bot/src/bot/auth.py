@@ -1,8 +1,10 @@
 import os
 import threading
 import time
+import hmac
+import hashlib
 import requests
-from flask import Flask, redirect, url_for, jsonify, session
+from flask import Flask, redirect, url_for, jsonify, session, request
 from flask_dance.contrib.github import make_github_blueprint, github
 from dotenv import load_dotenv
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -53,7 +55,8 @@ def create_oauth_app():
                 "setup": "/setup",
                 "github_auth": "/auth/start/<discord_user_id>",
                 "github_app_install": "/github/app/install",
-                "github_app_setup_callback": "/github/app/setup"
+                "github_app_setup_callback": "/github/app/setup",
+                "github_webhook": "/github/webhook"
             }
         })
 
@@ -85,6 +88,116 @@ def create_oauth_app():
             })
 
         except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    
+    @app.route("/github/webhook", methods=["POST"])
+    def github_webhook():
+        """
+        GitHub webhook endpoint for SaaS PR automation.
+        Processes pull_request events from any org that installs the GitHub App.
+        """
+        import asyncio
+        from threading import Thread
+        
+        # 1. Verify webhook signature
+        webhook_secret = os.getenv("GITHUB_WEBHOOK_SECRET")
+        if not webhook_secret:
+            print("WARNING: GITHUB_WEBHOOK_SECRET not set, skipping signature verification")
+        else:
+            signature = request.headers.get("X-Hub-Signature-256")
+            if not signature:
+                print("Missing X-Hub-Signature-256 header")
+                return jsonify({"error": "Missing signature"}), 401
+            
+            expected_signature = "sha256=" + hmac.new(
+                webhook_secret.encode(),
+                request.data,
+                hashlib.sha256
+            ).hexdigest()
+            
+            if not hmac.compare_digest(signature, expected_signature):
+                print("Invalid webhook signature")
+                return jsonify({"error": "Invalid signature"}), 401
+            
+            print("Signature verified successfully")
+        
+        # 2. Parse event type
+        event_type = request.headers.get("X-GitHub-Event")
+        delivery_id = request.headers.get("X-GitHub-Delivery")
+        
+        print(f"Received webhook: event={event_type}, delivery_id={delivery_id}")
+        
+        if event_type == "ping":
+            return jsonify({"message": "pong", "delivery_id": delivery_id}), 200
+        
+        # 3. Handle pull_request events
+        if event_type != "pull_request":
+            print(f"Ignoring event type: {event_type}")
+            return jsonify({"message": f"Ignored event: {event_type}"}), 200
+        
+        try:
+            payload = request.get_json()
+            action = payload.get("action")
+            
+            # Only process opened and synchronize (push to PR) actions
+            if action not in ["opened", "synchronize", "reopened"]:
+                print(f"Ignoring PR action: {action}")
+                return jsonify({"message": f"Ignored action: {action}"}), 200
+            
+            pr = payload.get("pull_request", {})
+            repo = payload.get("repository", {})
+            
+            pr_number = pr.get("number")
+            repo_full_name = repo.get("full_name")  # e.g., "owner/repo"
+            
+            if not pr_number or not repo_full_name:
+                return jsonify({"error": "Missing PR number or repo"}), 400
+            
+            print(f"Processing PR #{pr_number} in {repo_full_name} (action: {action})")
+            
+            # 4. Trigger PR automation in background thread
+            def run_pr_automation():
+                import sys
+                from pathlib import Path
+                
+                # Add pr_review to path
+                pr_review_path = Path(__file__).parent.parent.parent.parent.parent / "pr_review"
+                if str(pr_review_path) not in sys.path:
+                    sys.path.insert(0, str(pr_review_path))
+                
+                try:
+                    from main import PRReviewSystem
+                    
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    system = PRReviewSystem()
+                    results = loop.run_until_complete(
+                        system.process_pull_request(repo_full_name, pr_number)
+                    )
+                    
+                    print(f"PR automation completed: {results.get('status', 'unknown')}")
+                    loop.close()
+                    
+                except Exception as e:
+                    print(f"PR automation failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # Start background thread for PR processing
+            Thread(target=run_pr_automation, daemon=True).start()
+            
+            return jsonify({
+                "message": "PR automation triggered",
+                "pr_number": pr_number,
+                "repository": repo_full_name,
+                "action": action
+            }), 202
+            
+        except Exception as e:
+            print(f"Error processing webhook: {e}")
+            import traceback
+            traceback.print_exc()
             return jsonify({"error": str(e)}), 500
     
     @app.route("/invite")
@@ -454,7 +567,7 @@ def create_oauth_app():
                         
                         if channel:
                             embed = discord.Embed(
-                                title="✅ DisgitBot Setup Complete!",
+                                title="DisgitBot Setup Complete!",
                                 description=f"This server is now connected to the GitHub organization: **{github_org}**",
                                 color=0x43b581
                             )
@@ -528,9 +641,9 @@ def create_oauth_app():
                 <p>2) Configure custom roles:</p>
                 <div class="command">/configure roles</div>
                 {% if sync_triggered %}
-                <p>✅ Initial sync started. Stats will appear shortly.</p>
+                <p>Initial sync started. Stats will appear shortly.</p>
                 {% else %}
-                <p>⏳ Initial sync will run on the next scheduled pipeline.</p>
+                <p>Initial sync will run on the next scheduled pipeline.</p>
                 {% endif %}
                 <p>3) Try these commands:</p>
                 <div class="command">/getstats</div>
