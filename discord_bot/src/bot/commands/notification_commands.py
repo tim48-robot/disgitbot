@@ -18,72 +18,14 @@ class NotificationCommands:
     
     def register_commands(self):
         """Register all notification commands with the bot."""
-        self.bot.tree.add_command(self._set_webhook_command())
+        # Note: /set_webhook removed - PR automation disabled
         self.bot.tree.add_command(self._add_repo_command())
         self.bot.tree.add_command(self._remove_repo_command())
         self.bot.tree.add_command(self._list_repos_command())
         self.bot.tree.add_command(self._webhook_status_command())
     
-    def _set_webhook_command(self):
-        """Create the set_webhook command."""
-        @app_commands.command(name="set_webhook", description="Set Discord webhook URL for notifications")
-        @app_commands.describe(
-            notification_type="Type of notifications",
-            webhook_url="Discord webhook URL"
-        )
-        async def set_webhook(
-            interaction: discord.Interaction, 
-            notification_type: Literal["pr_automation", "cicd"],
-            webhook_url: str
-        ):
-            await interaction.response.defer(ephemeral=True)
-            
-            try:
-                # Check if setup is completed first
-                from shared.firestore import get_mt_client
-                mt_client = get_mt_client()
-                server_config = mt_client.get_server_config(str(interaction.guild_id)) or {}
-                
-                if not server_config.get('setup_completed'):
-                    await interaction.followup.send(
-                        "Please complete `/setup` first before configuring webhooks.",
-                        ephemeral=True
-                    )
-                    return
-                
-                # Validate webhook URL format
-                if not self._is_valid_webhook_url(webhook_url):
-                    await interaction.followup.send(
-                        "Invalid webhook URL format. Please provide a valid Discord webhook URL.",
-                        ephemeral=True
-                    )
-                    return
-                
-                # Set the webhook URL
-                success = WebhookManager.set_webhook_url(
-                    notification_type, 
-                    webhook_url, 
-                    discord_server_id=str(interaction.guild_id)
-                )
-                
-                if success:
-                    await interaction.followup.send(
-                        f"Successfully configured {notification_type} webhook URL.",
-                        ephemeral=True
-                    )
-                else:
-                    await interaction.followup.send(
-                        "Failed to save webhook configuration. Please try again.",
-                        ephemeral=True
-                    )
-                    
-            except Exception as e:
-                await interaction.followup.send(f"Error setting webhook: {str(e)}", ephemeral=True)
-                print(f"Error in set_webhook: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        return set_webhook
+    # /set_webhook command removed - PR automation feature disabled
+    # To re-enable, restore the _set_webhook_command method and register it above
     
     def _add_repo_command(self):
         """Create the add_repo command."""
