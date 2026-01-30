@@ -16,6 +16,25 @@ load_dotenv()
 oauth_sessions = {}
 oauth_sessions_lock = threading.Lock()
 
+# Background thread to clean up old OAuth sessions (prevents memory leak)
+def cleanup_old_oauth_sessions():
+    """Clean up OAuth sessions older than 10 minutes to prevent memory leak."""
+    while True:
+        time.sleep(300)  # Check every 5 minutes
+        with oauth_sessions_lock:
+            current_time = time.time()
+            expired_sessions = [
+                user_id for user_id, session_data in oauth_sessions.items()
+                if current_time - session_data.get('created_at', current_time) > 600  # 10 min
+            ]
+            for user_id in expired_sessions:
+                del oauth_sessions[user_id]
+                print(f"Cleaned up expired OAuth session for user {user_id}")
+
+# Start cleanup thread
+_cleanup_thread = threading.Thread(target=cleanup_old_oauth_sessions, daemon=True)
+_cleanup_thread.start()
+
 def create_oauth_app():
     """
     Create and configure the Flask OAuth application.
@@ -99,27 +118,23 @@ def create_oauth_app():
         import asyncio
         from threading import Thread
         
-        # 1. Verify webhook signature
+        # PR automation is disabled - /set_webhook command removed
+        # To re-enable: restore /set_webhook command in notification_commands.py
+        print("PR automation is disabled (feature removed)")
+        return jsonify({
+            "message": "PR automation is not available",
+            "status": "not_implemented"
+        }), 501
+        
+        # NOTE: Code below is kept for future re-enablement
+        # 1. Verify webhook signature (MANDATORY)
         webhook_secret = os.getenv("GITHUB_WEBHOOK_SECRET")
         if not webhook_secret:
-            print("WARNING: GITHUB_WEBHOOK_SECRET not set, skipping signature verification")
-        else:
-            signature = request.headers.get("X-Hub-Signature-256")
-            if not signature:
-                print("Missing X-Hub-Signature-256 header")
-                return jsonify({"error": "Missing signature"}), 401
-            
-            expected_signature = "sha256=" + hmac.new(
-                webhook_secret.encode(),
-                request.data,
-                hashlib.sha256
-            ).hexdigest()
-            
-            if not hmac.compare_digest(signature, expected_signature):
-                print("Invalid webhook signature")
-                return jsonify({"error": "Invalid signature"}), 401
-            
-            print("Signature verified successfully")
+            print("ERROR: GITHUB_WEBHOOK_SECRET not configured - rejecting webhook")
+            return jsonify({
+                "error": "Webhook not configured",
+                "message": "GITHUB_WEBHOOK_SECRET environment variable must be set"
+            }), 500
         
         # 2. Parse event type
         event_type = request.headers.get("X-GitHub-Event")
@@ -432,7 +447,7 @@ def create_oauth_app():
             return "Missing installation_id or state", 400
 
         try:
-            payload = state_serializer.loads(state, max_age=60 * 30)
+            payload = state_serializer.loads(state, max_age=60 * 60 * 24 * 7)  # 7 days for org approval
         except SignatureExpired:
             return "Setup link expired. Please restart setup from Discord.", 400
         except BadSignature:
