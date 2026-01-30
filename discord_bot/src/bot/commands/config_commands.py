@@ -100,6 +100,17 @@ class ConfigCommands:
                     await interaction.followup.send("Threshold must be a positive number.", ephemeral=True)
                     return
 
+                # Role hierarchy validation: bot must be able to manage this role
+                bot_member = guild.get_member(self.bot.user.id)
+                if bot_member and bot_member.top_role.position <= role.position:
+                    await interaction.followup.send(
+                        f"❌ Cannot add rule for @{role.name}.\n"
+                        f"This role is positioned **equal to or higher** than my top role (@{bot_member.top_role.name}).\n"
+                        f"Please move my role higher in Server Settings → Roles, or choose a lower role.",
+                        ephemeral=True
+                    )
+                    return
+
                 metric_key = metric.value
                 rules = role_rules.get(metric_key, [])
 

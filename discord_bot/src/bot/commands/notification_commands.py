@@ -18,11 +18,12 @@ class NotificationCommands:
     
     def register_commands(self):
         """Register all notification commands with the bot."""
-        # Note: /set_webhook removed - PR automation disabled
+        # CI/CD monitoring commands (still useful)
         self.bot.tree.add_command(self._add_repo_command())
         self.bot.tree.add_command(self._remove_repo_command())
         self.bot.tree.add_command(self._list_repos_command())
-        self.bot.tree.add_command(self._webhook_status_command())
+        # PR automation commands disabled - keeping code for future re-enablement
+        # self.bot.tree.add_command(self._webhook_status_command())
     
     # /set_webhook command removed - PR automation feature disabled
     # To re-enable, restore the _set_webhook_command method and register it above

@@ -19,8 +19,9 @@ class AdminCommands:
         self.bot.tree.add_command(self._check_permissions_command())
         self.bot.tree.add_command(self._setup_command())
         self.bot.tree.add_command(self._setup_voice_stats_command())
-        self.bot.tree.add_command(self._add_reviewer_command())
-        self.bot.tree.add_command(self._remove_reviewer_command())
+        # PR automation commands disabled - keeping code for future re-enablement
+        # self.bot.tree.add_command(self._add_reviewer_command())
+        # self.bot.tree.add_command(self._remove_reviewer_command())
         self.bot.tree.add_command(self._list_reviewers_command())
     
     def _check_permissions_command(self):
