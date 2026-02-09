@@ -35,11 +35,6 @@ FIELD_CONFIG = {
         'required': True,
         'description': 'Discord bot token for authentication'
     },
-    'GITHUB_TOKEN': {
-        'required': False,
-        'warning_if_empty': 'GITHUB_TOKEN is optional when using a GitHub App; required only for legacy PAT-based features like workflow dispatch.',
-        'description': 'GitHub personal access token for legacy API access'
-    },
     'GITHUB_CLIENT_ID': {
         'required': True,
         'description': 'GitHub OAuth application client ID'
@@ -48,32 +43,24 @@ FIELD_CONFIG = {
         'required': True,
         'description': 'GitHub OAuth application client secret'
     },
-    'REPO_OWNER': {
-        'required': True,
-        'description': 'GitHub repository owner/organization name'
-    },
     'OAUTH_BASE_URL': {
-        'required': False,
-        'warning_if_empty': "OAUTH_BASE_URL is empty - if you're deploying to get an initial URL, this is OK. You can update it later after deployment.",
-        'description': 'Base URL for OAuth redirects (auto-detected on Cloud Run if empty)'
+        'required': True,
+        'description': 'Base URL for OAuth redirects (your Cloud Run URL)'
     },
     'DISCORD_BOT_CLIENT_ID': {
         'required': True,
         'description': 'Discord application ID (client ID)'
     },
     'GITHUB_APP_ID': {
-        'required': False,
-        'warning_if_empty': 'GITHUB_APP_ID is optional for legacy OAuth/PAT mode; required for the invite-only GitHub App installation flow.',
-        'description': 'GitHub App ID (for GitHub App auth)'
+        'required': True,
+        'description': 'GitHub App ID (required for SaaS mode)'
     },
     'GITHUB_APP_PRIVATE_KEY_B64': {
-        'required': False,
-        'warning_if_empty': 'GITHUB_APP_PRIVATE_KEY_B64 is required for GitHub App auth unless GITHUB_APP_PRIVATE_KEY is provided.',
+        'required': True,
         'description': 'Base64-encoded GitHub App private key PEM'
     },
     'GITHUB_APP_SLUG': {
-        'required': False,
-        'warning_if_empty': 'GITHUB_APP_SLUG is required to generate the GitHub App install URL in /setup.',
+        'required': True,
         'description': 'GitHub App slug (the /apps/<slug> part)'
     }
 }

@@ -78,36 +78,6 @@ def create_oauth_app():
                 "github_webhook": "/github/webhook"
             }
         })
-
-    @app.route("/debug/servers")
-    def debug_servers():
-        """Debug endpoint to see registered servers (Protected)"""
-        admin_token = os.getenv("ADMIN_TOKEN")
-        if not admin_token or request.args.get("token") != admin_token:
-            return jsonify({"error": "Unauthorized"}), 401
-        try:
-            from shared.firestore import get_mt_client
-
-            mt_client = get_mt_client()
-
-            # Get all servers
-            servers_ref = mt_client.db.collection('discord_servers')
-            servers = []
-
-            for doc in servers_ref.stream():
-                server_data = doc.to_dict()
-                servers.append({
-                    'server_id': doc.id,
-                    'data': server_data
-                })
-
-            return jsonify({
-                "total_servers": len(servers),
-                "servers": servers
-            })
-
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
     
     @app.route("/github/webhook", methods=["POST"])
     def github_webhook():
@@ -210,13 +180,11 @@ def create_oauth_app():
     @app.route("/invite")
     def invite_bot():
         """Discord bot invitation endpoint"""
-        from flask import render_template_string
         
         # Your bot's client ID from Discord Developer Portal
         bot_client_id = os.getenv("DISCORD_BOT_CLIENT_ID", "YOUR_BOT_CLIENT_ID")
         
         # Required permissions for the bot
-        # Updated permissions to match working invite link
         permissions = "552172899344"  # Manage Roles + View Channels + Send Messages + Use Slash Commands
         
         discord_invite_url = (
@@ -227,96 +195,215 @@ def create_oauth_app():
             f"scope=bot+applications.commands"
         )
         
-        # Enhanced landing page with clear instructions
-        landing_page = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Add DisgitBot to Discord</title>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>
-                body {{
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    max-width: 600px; margin: 50px auto; padding: 20px;
-                    background: #36393f; color: #dcddde;
-                }}
-                .card {{
-                    background: #2f3136; padding: 30px; border-radius: 8px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-                }}
-                .btn {{
-                    background: #5865f2; color: white; padding: 12px 24px;
-                    text-decoration: none; border-radius: 4px; display: inline-block;
-                    margin: 10px 0; font-weight: 600;
-                }}
-                .btn:hover {{ background: #4752c4; }}
-                h1 {{ color: #ffffff; margin-top: 0; }}
-                .feature {{ margin: 15px 0; }}
-                .emoji {{ font-size: 1.2em; margin-right: 8px; }}
-                .warning {{
-                    background: #faa61a; color: #2f3136; padding: 15px;
-                    border-radius: 4px; margin: 20px 0; font-weight: 600;
-                }}
-                .steps {{ background: #40444b; padding: 20px; border-radius: 4px; margin: 20px 0; }}
-                .step {{ margin: 10px 0; }}
-                .code {{
-                    background: #2f3136; padding: 8px 12px; border-radius: 4px;
-                    font-family: monospace; display: inline-block; margin: 5px 0;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="card">
-                <h1>Add DisgitBot to Discord</h1>
-                <p>Track GitHub contributions and manage roles automatically in your Discord server.</p>
-
-                <div class="warning">
-                    Important: Setup Required After Adding Bot
-                </div>
-
-                <a href="{discord_invite_url}" class="btn">Add Bot to Discord</a>
-
-                <div class="steps">
-                    <h3>Setup Instructions (Required)</h3>
-                    <div class="step">
-                        <strong>Step 1:</strong> Click "Add Bot to Discord" above
-                    </div>
-                <div class="step">
-                    <strong>Step 2:</strong> After adding the bot, visit this setup URL:
-                    <div class="code">{base_url}/setup</div>
-                </div>
-                <div class="step">
-                        <strong>Step 3:</strong> Install the GitHub App and select repositories
-                </div>
-                <div class="step">
-                        <strong>Step 4:</strong> Users can link GitHub accounts with <span class="code">/link</span> in Discord
-                </div>
-                </div>
-
-                <h3>Features:</h3>
-                <div class="feature">
-                    <span class="emoji"></span> Real-time GitHub statistics
-                </div>
-                <div class="feature">
-                    <span class="emoji"></span> Automated role assignment
-                </div>
-                <div class="feature">
-                    <span class="emoji"></span> Contribution analytics & charts
-                </div>
-                <div class="feature">
-                    <span class="emoji"></span> Auto-updating voice channels
-                </div>
-
-                <p style="font-size: 0.9em; color: #b9bbbe; margin-top: 30px;">
-                    Compatible with any GitHub organization. Setup takes 30 seconds.
-                </p>
-            </div>
-        </body>
-        </html>
-        """
+        setup_url = f"{base_url}/setup"
         
-        return render_template_string(landing_page, discord_invite_url=discord_invite_url)
+        # Enhanced landing page with modern design
+        landing_page = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Add DisgitBot to Discord</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+    
+    <style>
+        body {{
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            margin: 0; padding: 20px;
+            background: radial-gradient(circle at top left, #2c2e33 0%, #0f1012 100%);
+            color: #e1e1e1;
+            height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            box-sizing: border-box;
+            line-height: 1.6;
+            overflow: hidden;
+        }}
+        
+        .card {{
+            background: rgba(30, 31, 34, 0.75);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 40px; border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+            width: 100%; max-width: 500px;
+        }}
+        
+        h1 {{ 
+            color: #ffffff; margin: 0 0 10px 0; 
+            font-size: 24px; font-weight: 800;
+            letter-spacing: -0.5px;
+            background: linear-gradient(90deg, #fff, #b9bbbe);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }}
+        
+        .subtitle {{ 
+            color: #b9bbbe; margin-bottom: 24px; 
+            font-size: 15px; font-weight: 400;
+        }}
+        
+        .btn {{
+            background: linear-gradient(135deg, #5865f2 0%, #4752c4 100%);
+            color: white; padding: 12px 24px;
+            border: none; border-radius: 12px; font-weight: 600;
+            cursor: pointer; font-size: 15px; width: 100%;
+            transition: transform 0.2s, box-shadow 0.2s, filter 0.2s;
+            text-align: center; 
+            display: inline-flex; align-items: center; justify-content: center; gap: 12px;
+            text-decoration: none;
+            box-shadow: 0 8px 20px rgba(88, 101, 242, 0.25);
+            box-sizing: border-box;
+            position: relative; 
+             
+        }}
+
+        .btn::before {{
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%; 
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transition: left 0.5s; 
+        }}
+        
+        .btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(88, 101, 242, 0.4);
+            filter: brightness(1.1);
+        }}
+
+        .btn:hover::before {{
+            left: 100%; 
+        }}
+
+        .discord-icon {{ width: 24px; height: 24px; fill: white; }}
+        
+        .steps-container {{
+            margin-top: 40px;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            padding-top: 30px;
+        }}
+
+        .section-title {{
+            font-size: 14px; text-transform: uppercase; letter-spacing: 1px;
+            color: #949BA4; margin-bottom: 20px; font-weight: 700;
+        }}
+
+        .step {{
+            display: flex; gap: 15px; margin-bottom: 20px;
+            position: relative;
+        }}
+        
+        .step-number {{
+            min-width: 24px; height: 24px;
+            background: rgba(255,255,255,0.1);
+            color: #fff; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px; font-weight: 700;
+            margin-top: 2px;
+        }}
+        
+        .step-content {{ font-size: 14px; color: #dcddde; }}
+        
+        code {{
+            background: rgba(88, 101, 242, 0.15);
+            border: 1px solid rgba(88, 101, 242, 0.3);
+            padding: 4px 8px; border-radius: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9em; color: #8ea0ff;
+            display: inline-block; margin-top: 4px;
+        }}
+
+        .features-grid {{
+            display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+            margin-top: 30px;
+        }}
+        
+        .feature-item {{
+            background: rgba(255,255,255,0.03);
+            padding: 10px 15px; border-radius: 8px;
+            font-size: 13px; color: #b9bbbe;
+            display: flex; align-items: center; gap: 8px;
+        }}
+
+        @media (max-width: 550px) {{
+            .card {{ 
+                width: 90%; 
+                padding: 30px; 
+            }}
+            h1 {{ font-size: 22px; }}
+        }}
+        
+        @media (max-height: 700px) {{
+            .card {{ padding: 25px; }}
+            .subtitle {{ margin-bottom: 20px; }}
+            .btn {{ padding: 10px 20px; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Add DisgitBot</h1>
+        <p class="subtitle">Track GitHub contributions and manage roles automatically in your Discord server.</p>
+
+        <a href="{discord_invite_url}" class="btn">
+            <svg class="discord-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 127.14 96.36">
+                <path d="M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A97.68,97.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0,105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.71,96.36,77.11,77.11,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a75.57,75.57,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.19,77,77,0,0,0,6.89,11.1A105.89,105.89,0,0,0,126.6,80.22c1.24-18.87-3.23-41.61-18.9-72.15ZM42.45,65.69C36.18,65.69,31,60,31,53s5-12.74,11.43-12.74S54,46,53.89,53,48.84,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.25,60,73.25,53s5-12.74,11.44-12.74S96.23,46,96.12,53,91.08,65.69,84.69,65.69Z"/>
+            </svg>
+            Add to Discord
+        </a>
+
+        <div class="steps-container">
+            <div class="section-title">Setup Required After Adding</div>
+            
+            <div class="step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <strong>Authorize Bot:</strong> Click the button above to add the bot to your server.
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <strong>Configuration:</strong> Visit the setup dashboard:<br>
+                    <code>{setup_url}</code>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <strong>Install GitHub App:</strong> Select which repositories you want to track.
+                </div>
+            </div>
+            
+             <div class="step">
+                <div class="step-number">4</div>
+                <div class="step-content">
+                    <strong>Link Accounts:</strong> Users can run <code>/link</code> in Discord.
+                </div>
+            </div>
+        </div>
+
+        <div class="features-grid">
+            <div class="feature-item">📊 Real-time Stats</div>
+            <div class="feature-item">🤖 Auto Roles</div>
+            <div class="feature-item">📈 Analytics Charts</div>
+            <div class="feature-item">🔊 Voice Updates</div>
+        </div>
+    </div>
+</body>
+</html>
+"""
+        
+        return landing_page
     
     @app.route("/auth/start/<discord_user_id>")
     def start_oauth(discord_user_id):
@@ -527,83 +614,12 @@ def create_oauth_app():
                         **existing_config,
                         "initial_sync_triggered_at": datetime.now().isoformat()
                     })
-                    if github_org:
-                        try:
-                            # Trigger Discord notification
-                            import asyncio
-                            from threading import Thread
-                            
-                            def run_async_notification():
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                                loop.run_until_complete(send_discord_setup_notification(guild_id, github_org))
-                                loop.close()
-                            
-                            Thread(target=run_async_notification).start()
-                            
-                            # Trigger initial data collection for this organization
-                            trigger_data_pipeline_for_org(github_org)
-                        except Exception as e:
-                            print(f"Warning: Failed to trigger setup notifications: {e}")
                     return True
                 print(f"Failed to trigger pipeline: {resp.status_code} {resp.text[:200]}")
             except Exception as exc:
                 print(f"Error triggering pipeline: {exc}")
             return False
 
-        async def send_discord_setup_notification(guild_id: str, github_org: str):
-            """Send a success message to the Discord guild's system channel."""
-            import discord
-            import os
-            
-            token = os.getenv('DISCORD_BOT_TOKEN')
-            if not token:
-                return
-                
-            intents = discord.Intents.default()
-            client = discord.Client(intents=intents)
-            
-            @client.event
-            async def on_ready():
-                try:
-                    guild = client.get_guild(int(guild_id))
-                    if guild:
-                        channel = guild.system_channel
-                        if not channel:
-                            channel = next((ch for ch in guild.text_channels if ch.permissions_for(guild.me).send_messages), None)
-                        
-                        if channel:
-                            embed = discord.Embed(
-                                title="DisgitBot Setup Complete!",
-                                description=f"This server is now connected to the GitHub organization: **{github_org}**",
-                                color=0x43b581
-                            )
-                            embed.add_field(name="Next Steps", value="1. Use `/link` to connect your GitHub account\n2. Configure webhooks with `/set_webhook`", inline=False)
-                            embed.set_footer(text="Powered by DisgitBot")
-                            
-                            await channel.send(embed=embed)
-                            print(f"Sent setup success notification to guild {guild_id}")
-                    
-                except Exception as e:
-                    print(f"Error sending Discord setup notification: {e}")
-                finally:
-                    await client.close()
-                    
-            try:
-                await client.start(token)
-            except Exception as e:
-                print(f"Failed to start Discord client for notification: {e}")
-            finally:
-                # Ensure client is closed even if start() fails
-                if not client.is_closed():
-                    await client.close()
-
-        def trigger_data_pipeline_for_org(github_org):
-            # Placeholder for triggering a data pipeline for the given GitHub organization
-            # This would typically involve calling an external service or another part of the system
-            print(f"Triggering data pipeline for GitHub organization: {github_org}")
-            # Example: You might want to add a task to a queue here
-            pass
 
         sync_triggered = trigger_initial_sync(github_org)
 
@@ -611,50 +627,168 @@ def create_oauth_app():
         <!DOCTYPE html>
         <html>
         <head>
-            <title>GitHub Connected!</title>
+            <title>Setup Completed!d!</title>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
             <style>
                 body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    max-width: 650px; margin: 50px auto; padding: 20px;
-                    background: #36393f; color: #dcddde;
+                    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                    margin: 0; padding: 20px;
+                    background: radial-gradient(circle at top left, #2c2e33 0%, #0f1012 100%);
+                    color: #e1e1e1;
+                    height: 100vh;
+                    display: flex; align-items: center; justify-content: center;
+                    box-sizing: border-box;
+                    line-height: 1.6;
+                    overflow: hidden;
                 }
+                
+                @media (max-width: 550px) {
+                    .card { width: 90%; padding: 30px; }
+                }
+
+                @media (max-height: 700px) {
+                    .card { padding: 25px; }
+                }
+                
                 .card {
-                    background: #2f3136; padding: 30px; border-radius: 8px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.2); text-align: center;
+                    background: rgba(30, 31, 34, 0.75);
+                    backdrop-filter: blur(16px);
+                    -webkit-backdrop-filter: blur(16px);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    padding: 40px; 
+                    border-radius: 24px;
+                    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+                    width: 100%; 
+                    max-width: 500px;
+                    text-align: left;
+                    position: relative;
+                    
                 }
-                h1 { color: #43b581; margin-top: 0; }
-                .command {
-                    background: #40444b; padding: 10px; border-radius: 4px;
-                    font-family: monospace; margin: 10px 0;
+
+                .card::before {
+                    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+                    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+                }
+                
+                .header-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+                
+                .success-icon { 
+                    color: #43b581; 
+                    width: 28px; height: 28px; 
+                    animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+                }
+
+                @keyframes popIn {
+                    0% { transform: scale(0); opacity: 0; }
+                    100% { transform: scale(1); opacity: 1; }
+                }
+
+                h1 { 
+                    color: #ffffff; margin: 0;
+                    font-size: 26px; font-weight: 800;
+                    letter-spacing: -0.5px;
+                }
+                
+                .subtitle { 
+                    color: #b9bbbe; margin: 0;
+                    font-size: 15px; font-weight: 400;
+                }
+                
+                .highlight { color: #fff; font-weight: 600; }
+
+                .divider {
+                    height: 1px;
+                    background: linear-gradient(90deg, rgba(255,255,255,0.0), rgba(255,255,255,0.1), rgba(255,255,255,0.0));
+                    margin: 30px 0;
+                }
+                
+                .section-title { 
+                    margin: 0 0 15px 0; 
+                    font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+                    font-weight: 700; color: #949BA4;
+                }
+                
+                .command-row {
+                    display: flex; align-items: center; justify-content: space-between;
+                    background: rgba(255,255,255,0.03);
+                    border: 1px solid rgba(255,255,255,0.05);
+                    padding: 12px 16px;
+                    border-radius: 12px;
+                    margin-bottom: 10px;
+                    transition: background 0.2s;
+                }
+                
+                .command-row:hover {
+                    background: rgba(255,255,255,0.05);
+                }
+
+                .cmd-desc { font-size: 14px; color: #dbdee1; font-weight: 500; }
+
+                code {
+                    background: rgba(88, 101, 242, 0.15);
+                    padding: 4px 8px; border-radius: 6px;
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 13px; color: #8ea0e1;
+                    border: 1px solid rgba(88, 101, 242, 0.2);
+                }
+                
+                .status-badge {
+                    display: inline-flex; align-items: center; gap: 8px;
+                    font-size: 13px; color: #43b581;
+                    background: rgba(67, 181, 129, 0.1);
+                    padding: 8px 12px; border-radius: 20px;
+                    margin-top: 10px; font-weight: 500;
+                    border: 1px solid rgba(67, 181, 129, 0.1);
+                }
+
+                .footer-text {
+                    margin-top: 32px; font-size: 13px; color: #82858f;
+                    text-align: center;
                 }
             </style>
         </head>
         <body>
             <div class="card">
-                <h1>GitHub Connected!</h1>
-                <p><strong>{{ guild_name }}</strong> is now connected to GitHub <strong>{{ github_org }}</strong>.</p>
-                {% if is_personal_install %}
-                <p style="color: #faa61a; font-weight: 600;">
-                    Heads up: you installed the app on a personal account. If you need org repos,
-                    reinstall the app on your organization.
-                </p>
-                {% endif %}
+                <div>
+                    <div class="header-row">
+                        <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        <h1>Success!</h1>
+                    </div>
+                    <p class="subtitle"><strong>{{ guild_name }}</strong> is now connected to <span class="highlight">{{ github_org }}</span>.</p>
+                </div>
 
-                <h3>Next Steps in Discord</h3>
-                <p>1) Users link their GitHub accounts:</p>
-                <div class="command">/link</div>
-                <p>2) Configure custom roles:</p>
-                <div class="command">/configure roles</div>
-                {% if sync_triggered %}
-                <p>Initial sync started. Stats will appear shortly.</p>
-                {% else %}
-                <p>Initial sync will run on the next scheduled pipeline.</p>
-                {% endif %}
-                <p>3) Try these commands:</p>
-                <div class="command">/getstats</div>
-                <div class="command">/halloffame</div>
+                <div class="divider"></div>
+
+                <div>
+                    <h3 class="section-title">Next Steps in Discord</h3>
+                    
+                    <div class="command-row">
+                        <span class="cmd-desc">1. Users link accounts</span>
+                        <code>/link</code>
+                    </div>
+
+                    <div class="command-row">
+                        <span class="cmd-desc">2. View stats</span>
+                        <code>/getstats</code>
+                    </div>
+
+                    <div class="status-badge">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                        {% if sync_triggered %}
+                        Data sync started. Stats appearing shortly.
+                        {% else %}
+                        Sync scheduled. Contributions ready soon.
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <p class="footer-text">
+                    You can safely close this window and return to Discord.
+                </p>
             </div>
         </body>
         </html>
@@ -690,53 +824,143 @@ def create_oauth_app():
             <title>DisgitBot Setup</title>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
             <style>
                 body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    max-width: 600px; margin: 50px auto; padding: 20px;
-                    background: #36393f; color: #dcddde;
+                    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                    margin: 0; padding: 20px;
+                    background: radial-gradient(circle at top left, #2c2e33 0%, #0f1012 100%);
+                    color: #e1e1e1;
+                    height: 100vh;
+                    display: flex; align-items: center; justify-content: center;
+                    box-sizing: border-box;
+                    line-height: 1.6;
+                    overflow: hidden;
                 }
+
+                @media (max-width: 550px) {
+                    .card { width: 90%; padding: 30px; }
+                }
+
+                @media (max-height: 700px) {
+                    .card { padding: 25px; }
+                }
+                
                 .card {
-                    background: #2f3136; padding: 30px; border-radius: 8px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                    background: rgba(30, 31, 34, 0.75);
+                    backdrop-filter: blur(16px);
+                    -webkit-backdrop-filter: blur(16px);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    padding: 40px; border-radius: 24px;
+                    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+                    width: 100%; max-width: 500px;
+                    text-align: left;
                 }
-                .form-group { margin: 20px 0; }
-                label { display: block; margin-bottom: 8px; font-weight: 600; }
-                input[type="text"] {
-                    width: 100%; padding: 12px; border: 1px solid #40444b;
-                    background: #40444b; color: #dcddde; border-radius: 4px;
-                    font-size: 16px; box-sizing: border-box;
+                
+                h1 { 
+                    color: #ffffff; margin: 0 0 8px 0; 
+                    font-size: 24px; font-weight: 800;
+                    letter-spacing: -0.5px;
                 }
-                input[type="text"]:focus {
-                    outline: none; border-color: #5865f2;
+                
+                .subtitle { 
+                    color: #b9bbbe; margin: 0;
+                    font-size: 15px; font-weight: 400;
                 }
+                
+                .guild-name {
+                    color: #fff;
+                    font-weight: 600;
+                }
+
+                .divider {
+                    height: 1px;
+                    background: linear-gradient(90deg, rgba(255,255,255,0.0), rgba(255,255,255,0.1), rgba(255,255,255,0.0));
+                    margin: 30px 0;
+                }
+                
+                .section-title { 
+                    margin: 0 0 10px 0; 
+                    font-size: 18px; 
+                    font-weight: 700; color: #ffffff;
+                    display: flex; align-items: center; gap: 8px;
+                }
+                
+                .section-desc {
+                    color: #b9bbbe; margin-bottom: 25px;
+                    font-size: 14px;
+                }
+                
                 .btn {
-                    background: #5865f2; color: white; padding: 12px 24px;
-                    border: none; border-radius: 4px; font-weight: 600;
-                    cursor: pointer; font-size: 16px; width: 100%;
+                    background: linear-gradient(135deg, #5865f2 0%, #4752c4 100%);
+                    color: white; padding: 12px 24px;
+                    border: none; border-radius: 12px; font-weight: 600;
+                    cursor: pointer; font-size: 15px; width: 100%;
+                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                    text-align: center; 
+                    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+                    text-decoration: none;
+                    box-shadow: 0 4px 15px rgba(88, 101, 242, 0.2);
+                    box-sizing: border-box;
+                    position: relative; 
                 }
-                .btn:hover { background: #4752c4; }
-                h1 { color: #ffffff; margin-top: 0; }
-                .example { color: #b9bbbe; font-size: 0.9em; }
-                .section-title { margin-top: 30px; }
+                
+                .btn::before {
+                    content: '';
+                    position: absolute;
+                    top: 0; left: -100%; width: 100%; height: 100%;
+                    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+                    transition: left 0.5s;
+                }
+                
+                .btn:hover::before { left: 100%; }
+                
+                .btn:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 8px 25px rgba(88, 101, 242, 0.3);
+                    filter: brightness(1.1);
+                }
+                
+                .github-icon { width: 20px; height: 20px; fill: currentColor; }
+                
+                .footer-text {
+                    margin-top: 32px; font-size: 13px; color: #82858f;
+                    text-align: center;
+                }
+                
+                code {
+                    background: rgba(255, 255, 255, 0.08);
+                    padding: 2px 6px; border-radius: 4px;
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 0.9em; color: #dcddde;
+                    border: 1px solid rgba(255,255,255,0.1);
+                }
             </style>
         </head>
         <body>
             <div class="card">
-                <h1>DisgitBot Added Successfully!</h1>
-                <p>Bot has been added to <strong>{{ guild_name }}</strong></p>
+                <div>
+                    <h1>DisgitBot Added!</h1>
+                    <p class="subtitle">Bot has been successfully added to <span class="guild-name">{{ guild_name }}</span></p>
+                </div>
 
-                <h3 class="section-title">Recommended: Install the GitHub App</h3>
-                <p>Install the DisgitBot GitHub App and pick which repositories to track.</p>
-                <a class="btn" href="{{ github_app_install_url }}">Install GitHub App</a>
+                <div class="divider"></div>
 
-                <h3 class="section-title">Manual Setup (disabled)</h3>
-                <p class="example">
-                    Manual setup is disabled in the hosted version. Please use
-                    <strong>Install GitHub App</strong> above to connect your repositories.
-                </p>
-
-                <p style="margin-top: 30px; font-size: 0.9em; color: #b9bbbe;">
+                <div>
+                    <h3 class="section-title">Install the GitHub App</h3>
+                    <p class="section-desc">Required: Select which repositories you want the bot to track.</p>
+                    
+                    <a class="btn" href="{{ github_app_install_url }}">
+                        <svg class="github-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                        </svg>
+                        Install GitHub App
+                    </a>
+                </div>
+                
+                <p class="footer-text">
                     After setup, users can link their GitHub accounts using <code>/link</code> in Discord.
                 </p>
             </div>
@@ -789,42 +1013,165 @@ def create_oauth_app():
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Setup Complete!</title>
+                <title>Setup Completed!d!</title>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
+                <link rel="preconnect" href="https://fonts.googleapis.com">
+                <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+                <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
                 <style>
-                    body { 
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                        max-width: 600px; margin: 50px auto; padding: 20px;
-                        background: #36393f; color: #dcddde;
+                    body {
+                        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                        margin: 0; padding: 20px;
+                        background: radial-gradient(circle at top left, #2c2e33 0%, #0f1012 100%);
+                        color: #e1e1e1;
+                        height: 100vh;
+                        display: flex; align-items: center; justify-content: center;
+                        box-sizing: border-box;
+                        line-height: 1.6;
+                        overflow: hidden;
                     }
-                    .card { 
-                        background: #2f3136; padding: 30px; border-radius: 8px;
-                        box-shadow: 0 2px 10px rgba(0,0,0,0.2); text-align: center;
+
+                    @media (max-width: 550px) {
+                        .card { width: 90%; padding: 30px; }
+                        h1 { font-size: 22px; }
                     }
-                    h1 { color: #43b581; margin-top: 0; }
-                    .command { 
-                        background: #40444b; padding: 10px; border-radius: 4px;
-                        font-family: monospace; margin: 10px 0;
+
+                    @media (max-height: 700px) {
+                        .card { padding: 25px; }
+                        .divider { margin: 20px 0; }
+                    }
+                    
+                    .card {
+                        background: rgba(30, 31, 34, 0.75);
+                        backdrop-filter: blur(16px);
+                        -webkit-backdrop-filter: blur(16px);
+                        border: 1px solid rgba(255, 255, 255, 0.08);
+                        padding: 40px; 
+                        border-radius: 24px;
+                        box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+                        width: 100%; 
+                        max-width: 500px;
+                        text-align: left;
+                        position: relative;
+                        
+                    }
+
+                    .card::before {
+                        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+                        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+                    }
+                    
+                    .header-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+                    
+                    .success-icon { 
+                        color: #43b581; 
+                        width: 28px; height: 28px; 
+                        animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+                    }
+
+                    @keyframes popIn {
+                        0% { transform: scale(0); opacity: 0; }
+                        100% { transform: scale(1); opacity: 1; }
+                    }
+
+                    h1 { 
+                        color: #ffffff; margin: 0;
+                        font-size: 26px; font-weight: 800;
+                        letter-spacing: -0.5px;
+                    }
+                    
+                    .subtitle { 
+                        color: #b9bbbe; margin: 0;
+                        font-size: 15px; font-weight: 400;
+                    }
+                    
+                    .highlight { color: #fff; font-weight: 600; }
+
+                    .divider {
+                        height: 1px;
+                        background: linear-gradient(90deg, rgba(255,255,255,0.0), rgba(255,255,255,0.1), rgba(255,255,255,0.0));
+                        margin: 30px 0;
+                    }
+                    
+                    .section-title { 
+                        margin: 0 0 15px 0; 
+                        font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+                        font-weight: 700; color: #949BA4;
+                    }
+                    
+                    .command-row {
+                        display: flex; align-items: center; justify-content: space-between;
+                        background: rgba(255,255,255,0.03);
+                        border: 1px solid rgba(255,255,255,0.05);
+                        padding: 12px 16px;
+                        border-radius: 12px;
+                        margin-bottom: 10px;
+                        transition: background 0.2s;
+                    }
+                    
+                    .command-row:hover {
+                        background: rgba(255,255,255,0.05);
+                    }
+
+                    .cmd-desc { font-size: 14px; color: #dbdee1; font-weight: 500; }
+
+                    code {
+                        background: rgba(88, 101, 242, 0.15);
+                        padding: 4px 8px; border-radius: 6px;
+                        font-family: 'JetBrains Mono', monospace;
+                        font-size: 13px; color: #8ea0e1;
+                        border: 1px solid rgba(88, 101, 242, 0.2);
+                    }
+                    
+                    .status-badge {
+                        display: inline-flex; align-items: center; gap: 8px;
+                        font-size: 13px; color: #43b581;
+                        background: rgba(67, 181, 129, 0.1);
+                        padding: 8px 12px; border-radius: 20px;
+                        margin-top: 10px; font-weight: 500;
+                        border: 1px solid rgba(67, 181, 129, 0.1);
+                    }
+
+                    .footer-text {
+                        margin-top: 32px; font-size: 13px; color: #82858f;
+                        text-align: center;
                     }
                 </style>
             </head>
             <body>
                 <div class="card">
-                    <h1>Setup Complete!</h1>
-                    <p>DisgitBot is now configured to track <strong>{{ github_org }}</strong> repositories.</p>
+                    <div>
+                        <div class="header-row">
+                            <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            <h1>Success!</h1>
+                        </div>
+                        <p class="subtitle"><strong>{{ guild_name }}</strong> is now connected to <span class="highlight">{{ github_org }}</span>.</p>
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <div>
+                        <h3 class="section-title">Next Steps in Discord</h3>
+                        
+                        <div class="command-row">
+                            <span class="cmd-desc">1. Users link accounts</span>
+                            <code>/link</code>
+                        </div>
+
+                        <div class="command-row">
+                            <span class="cmd-desc">2. View stats</span>
+                            <code>/getstats</code>
+                        </div>
+
+                        <div class="status-badge">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                            Data sync started. Stats appearing shortly.
+                        </div>
+                    </div>
                     
-                    <h3>Next Steps:</h3>
-                    <p>1. Return to Discord</p>
-                    <p>2. Users can link their GitHub accounts with:</p>
-                    <div class="command">/link</div>
-                    
-                    <p>3. Try these commands:</p>
-                    <div class="command">/getstats</div>
-                    <div class="command">/halloffame</div>
-                    
-                    <p style="margin-top: 30px; font-size: 0.9em; color: #b9bbbe;">
-                        Data collection will begin shortly. Stats will be available within 5-10 minutes.
+                    <p class="footer-text">
+                        You can safely close this window and return to Discord.
                     </p>
                 </div>
             </body>

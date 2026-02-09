@@ -333,17 +333,11 @@ create_new_env_file() {
         print_warning "Discord Bot Token is required!"
     done
     
-    # GitHub Token (optional for GitHub App mode)
-    read -p "GitHub Token (optional): " github_token
-    
     # GitHub Client ID
     read -p "GitHub Client ID: " github_client_id
     
     # GitHub Client Secret
     read -p "GitHub Client Secret: " github_client_secret
-    
-    # Repository Owner
-    read -p "Repository Owner: " repo_owner
     
     # OAuth Base URL (optional - will auto-detect on Cloud Run)
     read -p "OAuth Base URL (optional): " oauth_base_url
@@ -359,10 +353,8 @@ create_new_env_file() {
     # Create .env file
     cat > "$ENV_PATH" << EOF
 DISCORD_BOT_TOKEN=$discord_token
-GITHUB_TOKEN=$github_token
 GITHUB_CLIENT_ID=$github_client_id
 GITHUB_CLIENT_SECRET=$github_client_secret
-REPO_OWNER=$repo_owner
 OAUTH_BASE_URL=$oauth_base_url
 DISCORD_BOT_CLIENT_ID=$discord_bot_client_id
 GITHUB_APP_ID=$github_app_id
@@ -383,17 +375,11 @@ edit_env_file() {
     read -p "Discord Bot Token [$DISCORD_BOT_TOKEN]: " new_discord_token
     discord_token=${new_discord_token:-$DISCORD_BOT_TOKEN}
     
-    read -p "GitHub Token [$GITHUB_TOKEN]: " new_github_token
-    github_token=${new_github_token:-$GITHUB_TOKEN}
-    
     read -p "GitHub Client ID [$GITHUB_CLIENT_ID]: " new_github_client_id
     github_client_id=${new_github_client_id:-$GITHUB_CLIENT_ID}
     
     read -p "GitHub Client Secret [$GITHUB_CLIENT_SECRET]: " new_github_client_secret
     github_client_secret=${new_github_client_secret:-$GITHUB_CLIENT_SECRET}
-    
-    read -p "Repository Owner [$REPO_OWNER]: " new_repo_owner
-    repo_owner=${new_repo_owner:-$REPO_OWNER}
     
     read -p "OAuth Base URL [$OAUTH_BASE_URL]: " new_oauth_base_url
     oauth_base_url=${new_oauth_base_url:-$OAUTH_BASE_URL}
@@ -413,10 +399,8 @@ edit_env_file() {
     # Update .env file
     cat > "$ENV_PATH" << EOF
 DISCORD_BOT_TOKEN=$discord_token
-GITHUB_TOKEN=$github_token
 GITHUB_CLIENT_ID=$github_client_id
 GITHUB_CLIENT_SECRET=$github_client_secret
-REPO_OWNER=$repo_owner
 OAUTH_BASE_URL=$oauth_base_url
 DISCORD_BOT_CLIENT_ID=$discord_bot_client_id
 GITHUB_APP_ID=$github_app_id
