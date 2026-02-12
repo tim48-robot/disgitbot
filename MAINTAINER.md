@@ -57,9 +57,18 @@ In [discord_bot/src/bot/commands/notification_commands.py](file:///home/justin/o
     - Repository metadata: `read-only`
     - Subscribe to: `Pull request`, `Push`, `Workflow run`.
 
-### 3. Async Architecture Note
-All Firestore calls in this codebase must be offloaded to a thread pool when called from an async context (like command handlers). Always use the following pattern:
+### 3. Performance & Responsiveness
+- **Async I/O**: Use `await asyncio.to_thread` for all Firestore and synchronous network calls.
+- **CPU-Bound Tasks**: Avoid long-running computations (like image generation) in the main thread. Wrap them in `asyncio.to_thread` to keep the bot responsive.
+- **Shared Object Model**: Use the `shared.bot_instance` pattern for cross-thread communication between Flask and Discord.
+
+### 4. Async Architecture Pattern
+Always use this pattern for blocking calls:
 
 ```python
+# Offload to thread to keep event loop free
 result = await asyncio.to_thread(get_document, 'collection', 'doc_id', discord_server_id)
+
+# Offload CPU-bound calculations
+buffer = await asyncio.to_thread(generate_complex_chart, data)
 ```

@@ -37,7 +37,7 @@ class AnalyticsCommands:
                     await interaction.followup.send("No analytics data available for analysis.", ephemeral=True)
                     return
                 
-                chart_buffer = create_top_contributors_chart(analytics_data, 'prs', "Top Contributors by PRs")
+                chart_buffer = await asyncio.to_thread(create_top_contributors_chart, analytics_data, 'prs', "Top Contributors by PRs")
                 
                 if not chart_buffer:
                     await interaction.followup.send("No data available to generate chart.", ephemeral=True)
@@ -66,7 +66,7 @@ class AnalyticsCommands:
                     await interaction.followup.send("No analytics data available for analysis.", ephemeral=True)
                     return
                 
-                chart_buffer = create_activity_comparison_chart(analytics_data, "Activity Comparison")
+                chart_buffer = await asyncio.to_thread(create_activity_comparison_chart, analytics_data, "Activity Comparison")
                 
                 if not chart_buffer:
                     await interaction.followup.send("No data available to generate chart.", ephemeral=True)
@@ -95,7 +95,7 @@ class AnalyticsCommands:
                     await interaction.followup.send("No analytics data available for analysis.", ephemeral=True)
                     return
                 
-                chart_buffer = create_activity_trend_chart(analytics_data, "Recent Activity Trends")
+                chart_buffer = await asyncio.to_thread(create_activity_trend_chart, analytics_data, "Recent Activity Trends")
                 
                 if not chart_buffer:
                     await interaction.followup.send("No data available to generate chart.", ephemeral=True)
@@ -141,7 +141,8 @@ class AnalyticsCommands:
                     await interaction.followup.send("No analytics data available for analysis.", ephemeral=True)
                     return
                 
-                chart_buffer = create_time_series_chart(
+                chart_buffer = await asyncio.to_thread(
+                    create_time_series_chart,
                     analytics_data, 
                     metrics=selected_metrics, 
                     days=days,
