@@ -4,6 +4,7 @@ Admin Commands Module
 Handles administrative Discord commands like permissions and setup.
 """
 
+import asyncio
 import discord
 from discord import app_commands
 from shared.firestore import get_document, set_document
@@ -71,7 +72,7 @@ class AdminCommands:
                 # Check existing configuration
                 from shared.firestore import get_mt_client
                 mt_client = get_mt_client()
-                server_config = mt_client.get_server_config(str(guild.id)) or {}
+                server_config = await asyncio.to_thread(mt_client.get_server_config, str(guild.id)) or {}
                 if server_config.get('setup_completed'):
                     github_org = server_config.get('github_org', 'unknown')
                     await interaction.followup.send(
@@ -154,7 +155,7 @@ This setup is required only once per server."""
             try:
                 # Get current reviewer configuration
                 discord_server_id = str(interaction.guild.id)
-                reviewer_data = get_document('pr_config', 'reviewers', discord_server_id)
+                reviewer_data = await asyncio.to_thread(get_document, 'pr_config', 'reviewers', discord_server_id)
                 if not reviewer_data:
                     reviewer_data = {'reviewers': [], 'manual_reviewers': [], 'top_contributor_reviewers': [], 'count': 0}
                 
@@ -176,7 +177,7 @@ This setup is required only once per server."""
                 reviewer_data['last_updated'] = __import__('time').strftime('%Y-%m-%d %H:%M:%S UTC', __import__('time').gmtime())
                 
                 # Save to Firestore
-                success = set_document('pr_config', 'reviewers', reviewer_data, discord_server_id=discord_server_id)
+                success = await asyncio.to_thread(set_document, 'pr_config', 'reviewers', reviewer_data, discord_server_id=discord_server_id)
                 
                 if success:
                     await interaction.followup.send(f"Successfully added `{username}` to the manual reviewer pool.\nTotal reviewers: {len(all_reviewers)}")
@@ -201,7 +202,7 @@ This setup is required only once per server."""
             try:
                 # Get current reviewer configuration
                 discord_server_id = str(interaction.guild.id)
-                reviewer_data = get_document('pr_config', 'reviewers', discord_server_id)
+                reviewer_data = await asyncio.to_thread(get_document, 'pr_config', 'reviewers', discord_server_id)
                 if not reviewer_data or not reviewer_data.get('reviewers'):
                     await interaction.followup.send("No reviewers found in the database.")
                     return
@@ -225,7 +226,7 @@ This setup is required only once per server."""
                     reviewer_data['last_updated'] = __import__('time').strftime('%Y-%m-%d %H:%M:%S UTC', __import__('time').gmtime())
                     
                     # Save to Firestore
-                    success = set_document('pr_config', 'reviewers', reviewer_data, discord_server_id=discord_server_id)
+                    success = await asyncio.to_thread(set_document, 'pr_config', 'reviewers', reviewer_data, discord_server_id=discord_server_id)
                     
                     if success:
                         await interaction.followup.send(f"Successfully removed `{username}` from the manual reviewer pool.\nTotal reviewers: {len(all_reviewers)}")
@@ -254,8 +255,8 @@ This setup is required only once per server."""
             try:
                 # Get reviewer data
                 discord_server_id = str(interaction.guild.id)
-                reviewer_data = get_document('pr_config', 'reviewers', discord_server_id)
-                contributor_data = get_document('repo_stats', 'contributor_summary', discord_server_id)
+                reviewer_data = await asyncio.to_thread(get_document, 'pr_config', 'reviewers', discord_server_id)
+                contributor_data = await asyncio.to_thread(get_document, 'repo_stats', 'contributor_summary', discord_server_id)
                 
                 embed = discord.Embed(
                     title="PR Reviewer Pool Status",

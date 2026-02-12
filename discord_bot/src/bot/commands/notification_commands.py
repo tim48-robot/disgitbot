@@ -4,6 +4,7 @@ Notification Commands Module
 Handles Discord commands for managing GitHub to Discord notifications.
 """
 
+import asyncio
 import discord
 from discord import app_commands
 from typing import Literal
@@ -44,7 +45,8 @@ class NotificationCommands:
                     return
                 
                 # Add repository to monitoring list
-                success = WebhookManager.add_monitored_repository(
+                success = await asyncio.to_thread(
+                    WebhookManager.add_monitored_repository,
                     repository, 
                     discord_server_id=str(interaction.guild_id)
                 )
@@ -83,7 +85,8 @@ class NotificationCommands:
                     return
                 
                 # Remove repository from monitoring list
-                success = WebhookManager.remove_monitored_repository(
+                success = await asyncio.to_thread(
+                    WebhookManager.remove_monitored_repository,
                     repository,
                     discord_server_id=str(interaction.guild_id)
                 )
@@ -113,7 +116,8 @@ class NotificationCommands:
             await interaction.response.defer()
             
             try:
-                repositories = WebhookManager.get_monitored_repositories(
+                repositories = await asyncio.to_thread(
+                    WebhookManager.get_monitored_repositories,
                     discord_server_id=str(interaction.guild_id)
                 )
                 
@@ -161,7 +165,8 @@ class NotificationCommands:
             try:
                 from shared.firestore import get_document
                 
-                webhook_config = get_document(
+                webhook_config = await asyncio.to_thread(
+                    get_document,
                     'pr_config', 
                     'webhooks', 
                     discord_server_id=str(interaction.guild_id)

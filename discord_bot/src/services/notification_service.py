@@ -210,7 +210,7 @@ class NotificationService:
         try:
             # First try org-scoped config
             if github_org:
-                webhook_config = get_document('pr_config', 'webhooks', github_org=github_org)
+                webhook_config = await asyncio.to_thread(get_document, 'pr_config', 'webhooks', github_org=github_org)
                 if webhook_config:
                     # New list format support
                     if 'webhooks' in webhook_config:
@@ -226,7 +226,7 @@ class NotificationService:
             
             # Fallback to global config (legacy support)
             if not urls:
-                webhook_config = get_document('global_config', 'ci_cd_webhooks')
+                webhook_config = await asyncio.to_thread(get_document, 'global_config', 'ci_cd_webhooks')
                 if webhook_config:
                     legacy_url = webhook_config.get(f'{notification_type}_webhook_url')
                     if legacy_url:

@@ -4,6 +4,7 @@ Analytics Commands Module
 Handles analytics and visualization-related Discord commands.
 """
 
+import asyncio
 import discord
 from discord import app_commands
 from ...utils.analytics import create_top_contributors_chart, create_activity_comparison_chart, create_activity_trend_chart, create_time_series_chart
@@ -30,7 +31,7 @@ class AnalyticsCommands:
             
             try:
                 discord_server_id = str(interaction.guild.id)
-                analytics_data = get_document('repo_stats', 'analytics', discord_server_id)
+                analytics_data = await asyncio.to_thread(get_document, 'repo_stats', 'analytics', discord_server_id)
                 
                 if not analytics_data:
                     await interaction.followup.send("No analytics data available for analysis.", ephemeral=True)
@@ -59,7 +60,7 @@ class AnalyticsCommands:
             
             try:
                 discord_server_id = str(interaction.guild.id)
-                analytics_data = get_document('repo_stats', 'analytics', discord_server_id)
+                analytics_data = await asyncio.to_thread(get_document, 'repo_stats', 'analytics', discord_server_id)
                 
                 if not analytics_data:
                     await interaction.followup.send("No analytics data available for analysis.", ephemeral=True)
@@ -88,7 +89,7 @@ class AnalyticsCommands:
             
             try:
                 discord_server_id = str(interaction.guild.id)
-                analytics_data = get_document('repo_stats', 'analytics', discord_server_id)
+                analytics_data = await asyncio.to_thread(get_document, 'repo_stats', 'analytics', discord_server_id)
                 
                 if not analytics_data:
                     await interaction.followup.send("No analytics data available for analysis.", ephemeral=True)
@@ -134,7 +135,7 @@ class AnalyticsCommands:
                     return
                 
                 discord_server_id = str(interaction.guild.id)
-                analytics_data = get_document('repo_stats', 'analytics', discord_server_id)
+                analytics_data = await asyncio.to_thread(get_document, 'repo_stats', 'analytics', discord_server_id)
                 
                 if not analytics_data:
                     await interaction.followup.send("No analytics data available for analysis.", ephemeral=True)

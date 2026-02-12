@@ -71,7 +71,7 @@ class UserCommands:
                 discord_server_id = str(interaction.guild.id)
                 mt_client = get_mt_client()
 
-                existing_user_data = mt_client.get_user_mapping(discord_user_id) or {}
+                existing_user_data = await asyncio.to_thread(mt_client.get_user_mapping, discord_user_id) or {}
                 existing_github = existing_user_data.get('github_id')
                 existing_servers = existing_user_data.get('servers', [])
 
@@ -79,7 +79,7 @@ class UserCommands:
                     if discord_server_id not in existing_servers:
                         existing_servers.append(discord_server_id)
                         existing_user_data['servers'] = existing_servers
-                        mt_client.set_user_mapping(discord_user_id, existing_user_data)
+                        await asyncio.to_thread(mt_client.set_user_mapping, discord_user_id, existing_user_data)
 
                     await self._safe_followup(
                         interaction,
@@ -114,7 +114,7 @@ class UserCommands:
                         'last_updated': str(interaction.created_at)
                     }
 
-                    mt_client.set_user_mapping(discord_user_id, user_data)
+                    await asyncio.to_thread(mt_client.set_user_mapping, discord_user_id, user_data)
 
                     await self._safe_followup(
                         interaction,
@@ -184,12 +184,12 @@ class UserCommands:
                 discord_server_id = str(interaction.guild.id)
                 mt_client = get_mt_client()
 
-                user_mapping = mt_client.get_user_mapping(discord_user_id) or {}
+                user_mapping = await asyncio.to_thread(mt_client.get_user_mapping, discord_user_id) or {}
                 if not user_mapping.get('github_id'):
                     await self._safe_followup(interaction, "Your Discord account is not linked to any GitHub username.")
                     return
 
-                mt_client.set_user_mapping(discord_user_id, {})
+                await asyncio.to_thread(mt_client.set_user_mapping, discord_user_id, {})
                 await self._safe_followup(interaction, "Successfully unlinked your Discord account from your GitHub username.")
                 print(f"Unlinked Discord user {interaction.user.name}")
 
@@ -224,21 +224,21 @@ class UserCommands:
                 # Check global link mapping first
                 discord_server_id = str(interaction.guild.id)
                 mt_client = get_mt_client()
-                user_mapping = mt_client.get_user_mapping(user_id) or {}
+                user_mapping = await asyncio.to_thread(mt_client.get_user_mapping, user_id) or {}
                 github_username = user_mapping.get('github_id')
                 if not github_username:
                     await self._safe_followup(interaction, "Your Discord account is not linked to a GitHub username. Use `/link` to link it.")
                     return
 
-                github_org = mt_client.get_org_from_server(discord_server_id)
+                github_org = await asyncio.to_thread(mt_client.get_org_from_server, discord_server_id)
                 if not github_org:
                     await self._safe_followup(interaction, "This server is not configured yet. Run `/setup` first.")
                     return
 
                 # Fetch org-scoped stats for this GitHub username
-                user_data = mt_client.get_org_document(github_org, 'contributions', github_username)
+                user_data = await asyncio.to_thread(mt_client.get_org_document, github_org, 'contributions', github_username)
                 if not user_data:
-                    metrics = get_document('repo_stats', 'metrics', discord_server_id)
+                    metrics = await asyncio.to_thread(get_document, 'repo_stats', 'metrics', discord_server_id)
                     last_updated = metrics.get('last_updated') if metrics else None
                     user_data = self._empty_user_stats(last_updated)
 
@@ -278,7 +278,7 @@ class UserCommands:
 
             try:
                 discord_server_id = str(interaction.guild.id)
-                hall_of_fame_data = get_document('repo_stats', 'hall_of_fame', discord_server_id)
+                hall_of_fame_data = await asyncio.to_thread(get_document, 'repo_stats', 'hall_of_fame', discord_server_id)
 
                 if not hall_of_fame_data:
                     await self._safe_followup(interaction, "Hall of fame data not available yet.")
@@ -341,7 +341,7 @@ class UserCommands:
         org_name = None
         if discord_server_id:
             try:
-                org_name = get_mt_client().get_org_from_server(discord_server_id)
+                org_name = await asyncio.to_thread(get_mt_client().get_org_from_server, discord_server_id)
             except Exception as e:
                 print(f"Error fetching org for server {discord_server_id}: {e}")
 

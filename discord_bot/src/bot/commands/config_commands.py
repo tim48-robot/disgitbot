@@ -4,6 +4,7 @@ Configuration Commands Module
 Server configuration commands for role mappings and setup checks.
 """
 
+import asyncio
 import discord
 from discord import app_commands
 from shared.firestore import get_mt_client
@@ -64,7 +65,7 @@ class ConfigCommands:
                 return
 
             mt_client = get_mt_client()
-            server_config = mt_client.get_server_config(str(guild.id)) or {}
+            server_config = await asyncio.to_thread(mt_client.get_server_config, str(guild.id)) or {}
             if not server_config.get('setup_completed'):
                 await interaction.followup.send("Run `/setup` first to connect GitHub.", ephemeral=True)
                 return
@@ -84,7 +85,7 @@ class ConfigCommands:
             if action_value == "reset":
                 role_rules = {'pr': [], 'issue': [], 'commit': []}
                 server_config['role_rules'] = role_rules
-                mt_client.set_server_config(str(guild.id), server_config)
+                await asyncio.to_thread(mt_client.set_server_config, str(guild.id), server_config)
                 await interaction.followup.send("Role rules reset to defaults.", ephemeral=True)
                 return
 
@@ -127,7 +128,7 @@ class ConfigCommands:
                 role_rules[metric_key] = rules
 
                 server_config['role_rules'] = role_rules
-                mt_client.set_server_config(str(guild.id), server_config)
+                await asyncio.to_thread(mt_client.set_server_config, str(guild.id), server_config)
 
                 await interaction.followup.send(
                     f"Added rule: {metric.name} {threshold}+ -> @{role.name}",
@@ -156,7 +157,7 @@ class ConfigCommands:
                     return
 
                 server_config['role_rules'] = role_rules
-                mt_client.set_server_config(str(guild.id), server_config)
+                await asyncio.to_thread(mt_client.set_server_config, str(guild.id), server_config)
 
                 await interaction.followup.send(f"Removed custom rules for @{role.name}.", ephemeral=True)
                 return

@@ -4,6 +4,7 @@ Discord Bot Module
 Clean, modular Discord bot initialization and setup.
 """
 
+import asyncio
 import os
 import sys
 import discord
@@ -20,6 +21,10 @@ class DiscordBot:
         self._setup_environment()
         self._create_bot()
         self._register_commands()
+        
+        # Store global reference for cross-thread communication
+        from . import shared
+        shared.bot_instance = self
     
     def _setup_environment(self):
         """Setup environment variables and logging."""
@@ -59,10 +64,10 @@ class DiscordBot:
         async def on_guild_join(guild):
             """Called when bot joins a new server - provide setup guidance."""
             try:
-                # Check if server is already configured
+                # Check if server is already configured (offload to thread to avoid blocking)
                 from shared.firestore import get_mt_client
                 mt_client = get_mt_client()
-                server_config = mt_client.get_server_config(str(guild.id)) or {}
+                server_config = await asyncio.to_thread(mt_client.get_server_config, str(guild.id)) or {}
 
                 if not server_config.get('setup_completed'):
                     # Check if we sent a reminder very recently (24h cooldown)
@@ -111,7 +116,7 @@ After setup, try these commands:
                         
                         # Mark reminder as sent
                         from datetime import datetime
-                        mt_client.set_server_config(str(guild.id), {
+                        await asyncio.to_thread(mt_client.set_server_config, str(guild.id), {
                             **server_config,
                             'setup_reminder_sent_at': datetime.now().isoformat()
                         })
