@@ -1,4 +1,7 @@
 import os
+from typing import Optional
+from datetime import datetime, timedelta
+from shared.firestore import get_mt_client
 import threading
 import time
 import hmac
@@ -30,6 +33,114 @@ def cleanup_old_oauth_sessions():
             for user_id in expired_sessions:
                 del oauth_sessions[user_id]
                 print(f"Cleaned up expired OAuth session for user {user_id}")
+
+def notify_setup_complete(guild_id: str, github_org: str):
+    """Send a success message to the Discord guild's system channel instantly."""
+    from . import shared
+    import discord
+    
+    if not shared.bot_instance or not shared.bot_instance.bot:
+        print(f"Warning: Cannot send setup notification to {guild_id} - bot instance not ready")
+        return
+
+    bot = shared.bot_instance.bot
+    
+    async def send_msg():
+        try:
+            guild = bot.get_guild(int(guild_id))
+            if not guild:
+                # Try to fetch if not in cache
+                guild = await bot.fetch_guild(int(guild_id))
+            
+            if guild:
+                channel = guild.system_channel
+                if not channel:
+                    channel = next((ch for ch in guild.text_channels if ch.permissions_for(guild.me).send_messages), None)
+                
+                if channel:
+                    embed = discord.Embed(
+                        title="✅ DisgitBot Setup Complete!",
+                        description=f"This server is now connected to the GitHub organization: **{github_org}**",
+                        color=0x43b581
+                    )
+                    embed.add_field(
+                        name="Next Steps", 
+                        value="1. Use `/link` to connect your GitHub account\n2. Customize roles with `/configure roles`", 
+                        inline=False
+                    )
+                    embed.set_footer(text="Powered by DisgitBot")
+                    
+                    await channel.send(embed=embed)
+                    print(f"Sent setup success notification to guild {guild_id}")
+        except Exception as e:
+            print(f"Error sending Discord setup notification: {e}")
+
+    # Schedule the coroutine in the bot's event loop (thread-safe)
+    import asyncio
+    asyncio.run_coroutine_threadsafe(send_msg(), bot.loop)
+
+def trigger_initial_sync(guild_id: str, org_name: str, installation_id: Optional[int] = None) -> bool:
+    """Trigger the GitHub Actions pipeline using GitHub App identity."""
+    from src.services.github_app_service import GitHubAppService
+    
+    repo_owner = os.getenv("REPO_OWNER", "ruxailab") # Default to ruxailab if not set
+    repo_name = os.getenv("REPO_NAME", "disgitbot")
+    ref = os.getenv("WORKFLOW_REF", "main")
+
+    gh_app = GitHubAppService()
+    
+    # Auto-discover installation ID if not provided
+    if not installation_id:
+        installation_id = gh_app.find_installation_id(repo_owner)
+    
+    if not installation_id:
+        print(f"Skipping pipeline trigger: could not find installation for {repo_owner}")
+        return False
+
+    # Use the installation ID to get a token for the pipeline trigger
+    token = gh_app.get_installation_access_token(installation_id)
+
+    if not token:
+        print(f"Skipping pipeline trigger: failed to get token for installation {installation_id}")
+        return False
+
+    mt_client = get_mt_client()
+    existing_config = mt_client.get_server_config(guild_id) or {}
+    last_trigger = existing_config.get("initial_sync_triggered_at")
+    if last_trigger:
+        try:
+            last_dt = datetime.fromisoformat(last_trigger)
+            if datetime.now() - last_dt < timedelta(minutes=10):
+                print("Skipping pipeline trigger: recent sync already triggered")
+                return False
+        except ValueError:
+            pass
+
+    # Use the App token to trigger the workflow dispatch
+    url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/actions/workflows/discord_bot_pipeline.yml/dispatches"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+    payload = {
+        "ref": ref,
+        "inputs": {
+            "organization": org_name
+        }
+    }
+
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=20)
+        if resp.status_code in (201, 204):
+            mt_client.set_server_config(guild_id, {
+                **existing_config,
+                "initial_sync_triggered_at": datetime.now().isoformat()
+            })
+            return True
+        print(f"Failed to trigger pipeline: {resp.status_code} {resp.text[:200]}")
+    except Exception as exc:
+        print(f"Error triggering pipeline: {exc}")
+    return False
 
 # Start cleanup thread
 _cleanup_thread = threading.Thread(target=cleanup_old_oauth_sessions, daemon=True)
@@ -210,55 +321,66 @@ def create_oauth_app():
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
     
     <style>
+        html {{
+            background-color: #0f1012;
+            overflow: hidden; /* Prevent scrolling on desktop */
+        }}
+        
+        @media (max-width: 480px) {{
+            html {{ overflow: auto; }} /* Allow scrolling on mobile */
+        }}
+
         body {{
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            margin: 0; padding: 20px;
+            margin: 0; padding: 15px;
             background: radial-gradient(circle at top left, #2c2e33 0%, #0f1012 100%);
             color: #e1e1e1;
             height: 100vh;
             display: flex; align-items: center; justify-content: center;
             box-sizing: border-box;
-            line-height: 1.6;
-            overflow: hidden;
+            line-height: 1.5;
         }}
         
         .card {{
-            background: rgba(30, 31, 34, 0.75);
+            background: rgba(30, 31, 34, 0.8);
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
             border: 1px solid rgba(255, 255, 255, 0.08);
-            padding: 40px; border-radius: 24px;
+            padding: 24px 32px; border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-            width: 100%; max-width: 500px;
+            width: 100%; max-width: 460px;
+            position: relative;
         }}
         
         h1 {{ 
-            color: #ffffff; margin: 0 0 10px 0; 
-            font-size: 24px; font-weight: 800;
-            letter-spacing: -0.5px;
+            color: #ffffff; margin: 0 0 6px 0; 
+            font-size: 19px; font-weight: 800;
+            letter-spacing: -0.4px;
             background: linear-gradient(90deg, #fff, #b9bbbe);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }}
         
         .subtitle {{ 
-            color: #b9bbbe; margin-bottom: 24px; 
-            font-size: 15px; font-weight: 400;
+            color: #b9bbbe; margin-bottom: 16px; 
+            font-size: 13px; font-weight: 400;
+            max-width: 90%;
         }}
         
         .btn {{
             background: linear-gradient(135deg, #5865f2 0%, #4752c4 100%);
-            color: white; padding: 12px 24px;
-            border: none; border-radius: 12px; font-weight: 600;
-            cursor: pointer; font-size: 15px; width: 100%;
+            color: white; padding: 11px 20px;
+            border: none; border-radius: 10px; font-weight: 600;
+            cursor: pointer; font-size: 14px; width: 100%;
+            outline: none;
             transition: transform 0.2s, box-shadow 0.2s, filter 0.2s;
             text-align: center; 
-            display: inline-flex; align-items: center; justify-content: center; gap: 12px;
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px;
             text-decoration: none;
-            box-shadow: 0 8px 20px rgba(88, 101, 242, 0.25);
+            box-shadow: 0 6px 16px rgba(88, 101, 242, 0.2);
             box-sizing: border-box;
             position: relative; 
-             
+            overflow: hidden; 
         }}
 
         .btn::before {{
@@ -268,13 +390,13 @@ def create_oauth_app():
             left: -100%; 
             width: 100%;
             height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
             transition: left 0.5s; 
         }}
         
         .btn:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 12px 30px rgba(88, 101, 242, 0.4);
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(88, 101, 242, 0.35);
             filter: brightness(1.1);
         }}
 
@@ -282,68 +404,68 @@ def create_oauth_app():
             left: 100%; 
         }}
 
-        .discord-icon {{ width: 24px; height: 24px; fill: white; }}
+        .discord-icon {{ width: 20px; height: 20px; fill: white; }}
         
         .steps-container {{
-            margin-top: 40px;
-            border-top: 1px solid rgba(255,255,255,0.08);
-            padding-top: 30px;
+            margin-top: 24px;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            padding-top: 20px;
         }}
 
         .section-title {{
-            font-size: 14px; text-transform: uppercase; letter-spacing: 1px;
-            color: #949BA4; margin-bottom: 20px; font-weight: 700;
+            font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px;
+            color: #949BA4; margin-bottom: 16px; font-weight: 700;
         }}
 
         .step {{
-            display: flex; gap: 15px; margin-bottom: 20px;
+            display: flex; gap: 12px; margin-bottom: 14px;
             position: relative;
         }}
         
         .step-number {{
-            min-width: 24px; height: 24px;
-            background: rgba(255,255,255,0.1);
+            min-width: 20px; height: 20px;
+            background: rgba(255,255,255,0.08);
             color: #fff; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
-            font-size: 12px; font-weight: 700;
-            margin-top: 2px;
+            font-size: 11px; font-weight: 700;
+            margin-top: 1px;
         }}
         
-        .step-content {{ font-size: 14px; color: #dcddde; }}
+        .step-content {{ font-size: 13px; color: #dcddde; line-height: 1.4; }}
         
-        code {{
-            background: rgba(88, 101, 242, 0.15);
-            border: 1px solid rgba(88, 101, 242, 0.3);
-            padding: 4px 8px; border-radius: 6px;
+        .url-box {{
+            background: rgba(88, 101, 242, 0.08);
+            border: 1px solid rgba(88, 101, 242, 0.2);
+            padding: 4px 10px; border-radius: 6px;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.9em; color: #8ea0ff;
+            font-size: 12px; color: #a4b3ff;
             display: inline-block; margin-top: 4px;
+            text-decoration: none;
+            word-break: break-all;
+        }}
+        
+        .url-box:hover {{
+            background: rgba(88, 101, 242, 0.15);
+            border-color: rgba(88, 101, 242, 0.4);
         }}
 
         .features-grid {{
-            display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
-            margin-top: 30px;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+            margin-top: 20px;
         }}
         
         .feature-item {{
-            background: rgba(255,255,255,0.03);
-            padding: 10px 15px; border-radius: 8px;
-            font-size: 13px; color: #b9bbbe;
-            display: flex; align-items: center; gap: 8px;
+            background: rgba(255,255,255,0.02);
+            padding: 8px 12px; border-radius: 8px;
+            font-size: 12px; color: #b9bbbe;
+            display: flex; align-items: center; gap: 6px;
+            border: 1px solid rgba(255,255,255,0.03);
         }}
 
-        @media (max-width: 550px) {{
-            .card {{ 
-                width: 90%; 
-                padding: 30px; 
-            }}
-            h1 {{ font-size: 22px; }}
-        }}
-        
-        @media (max-height: 700px) {{
-            .card {{ padding: 25px; }}
-            .subtitle {{ margin-bottom: 20px; }}
-            .btn {{ padding: 10px 20px; }}
+        @media (max-width: 480px) {{
+            .card {{ padding: 20px; }}
+            h1 {{ font-size: 18px; }}
+            .features-grid {{ grid-template-columns: 1fr; }}
         }}
     </style>
 </head>
@@ -360,43 +482,42 @@ def create_oauth_app():
         </a>
 
         <div class="steps-container">
-            <div class="section-title">Setup Required After Adding</div>
+            <div class="section-title">Required Setup Activities</div>
             
             <div class="step">
                 <div class="step-number">1</div>
                 <div class="step-content">
-                    <strong>Authorize Bot:</strong> Click the button above to add the bot to your server.
+                    <strong>Authorize:</strong> Click the button above to add the bot.
                 </div>
             </div>
 
             <div class="step">
                 <div class="step-number">2</div>
                 <div class="step-content">
-                    <strong>Configuration:</strong> Visit the setup dashboard:<br>
-                    <code>{setup_url}</code>
+                    <strong>Configure:</strong> Automatic redirect after authorization.
                 </div>
             </div>
 
             <div class="step">
                 <div class="step-number">3</div>
                 <div class="step-content">
-                    <strong>Install GitHub App:</strong> Select which repositories you want to track.
+                    <strong>Track:</strong> Install the App on your repositories.
                 </div>
             </div>
             
              <div class="step">
                 <div class="step-number">4</div>
                 <div class="step-content">
-                    <strong>Link Accounts:</strong> Users can run <code>/link</code> in Discord.
+                    <strong>Link:</strong> Users run <code>/link</code> in your Discord server.
                 </div>
             </div>
         </div>
 
         <div class="features-grid">
-            <div class="feature-item">📊 Real-time Stats</div>
+            <div class="feature-item">📊 Stats</div>
             <div class="feature-item">🤖 Auto Roles</div>
-            <div class="feature-item">📈 Analytics Charts</div>
-            <div class="feature-item">🔊 Voice Updates</div>
+            <div class="feature-item">📈 Analytics</div>
+            <div class="feature-item">🔊 Updates</div>
         </div>
     </div>
 </body>
@@ -573,77 +694,38 @@ def create_oauth_app():
         if not success:
             return "Error: Failed to save configuration", 500
 
-        def trigger_initial_sync(org_name: str) -> bool:
-            """Trigger the GitHub Actions pipeline once after setup."""
-            token = os.getenv("GITHUB_TOKEN")
-            repo_owner = os.getenv("REPO_OWNER")
-            repo_name = os.getenv("REPO_NAME", "disgitbot")
-            ref = os.getenv("WORKFLOW_REF", "main")
-
-            if not token or not repo_owner:
-                print("Skipping pipeline trigger: missing GITHUB_TOKEN or REPO_OWNER")
-                return False
-
-            existing_config = mt_client.get_server_config(guild_id) or {}
-            last_trigger = existing_config.get("initial_sync_triggered_at")
-            if last_trigger:
-                try:
-                    last_dt = datetime.fromisoformat(last_trigger)
-                    if datetime.now() - last_dt < timedelta(minutes=10):
-                        print("Skipping pipeline trigger: recent sync already triggered")
-                        return False
-                except ValueError:
-                    pass
-
-            url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/actions/workflows/discord_bot_pipeline.yml/dispatches"
-            headers = {
-                "Authorization": f"token {token}",
-                "Accept": "application/vnd.github+json",
-            }
-            payload = {
-                "ref": ref,
-                "inputs": {
-                    "organization": org_name
-                }
-            }
-
-            try:
-                resp = requests.post(url, headers=headers, json=payload, timeout=20)
-                if resp.status_code in (201, 204):
-                    mt_client.set_server_config(guild_id, {
-                        **existing_config,
-                        "initial_sync_triggered_at": datetime.now().isoformat()
-                    })
-                    return True
-                print(f"Failed to trigger pipeline: {resp.status_code} {resp.text[:200]}")
-            except Exception as exc:
-                print(f"Error triggering pipeline: {exc}")
-            return False
 
 
-        sync_triggered = trigger_initial_sync(github_org)
+        # Trigger initial sync and Discord notification
+        sync_triggered = trigger_initial_sync(guild_id, github_org, int(installation_id))
+        notify_setup_complete(guild_id, github_org)
 
         success_page = """
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Setup Completed!d!</title>
+            <title>Setup Completed!</title>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <link rel="preconnect" href="https://fonts.googleapis.com">
             <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
             <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
             <style>
+                html {
+                    background-color: #0f1012;
+                }
+                
                 body {
                     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
                     margin: 0; padding: 20px;
                     background: radial-gradient(circle at top left, #2c2e33 0%, #0f1012 100%);
                     color: #e1e1e1;
                     height: 100vh;
+                    overflow: hidden;
                     display: flex; align-items: center; justify-content: center;
                     box-sizing: border-box;
                     line-height: 1.6;
-                    overflow: hidden;
+                    
                 }
                 
                 @media (max-width: 550px) {
@@ -828,46 +910,47 @@ def create_oauth_app():
             <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
             <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
             <style>
+                html {
+                    background-color: #0f1012;
+                    overflow: hidden;
+                }
+                
                 body {
                     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-                    margin: 0; padding: 20px;
+                    margin: 0; padding: 15px;
                     background: radial-gradient(circle at top left, #2c2e33 0%, #0f1012 100%);
                     color: #e1e1e1;
                     height: 100vh;
                     display: flex; align-items: center; justify-content: center;
                     box-sizing: border-box;
-                    line-height: 1.6;
-                    overflow: hidden;
+                    line-height: 1.5;
                 }
 
-                @media (max-width: 550px) {
-                    .card { width: 90%; padding: 30px; }
-                }
-
-                @media (max-height: 700px) {
-                    .card { padding: 25px; }
+                @media (max-width: 480px) {
+                    html { overflow: auto; }
+                    .card { width: 95%; padding: 20px; }
                 }
                 
                 .card {
-                    background: rgba(30, 31, 34, 0.75);
+                    background: rgba(30, 31, 34, 0.8);
                     backdrop-filter: blur(16px);
                     -webkit-backdrop-filter: blur(16px);
                     border: 1px solid rgba(255, 255, 255, 0.08);
-                    padding: 40px; border-radius: 24px;
+                    padding: 24px 32px; border-radius: 20px;
                     box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-                    width: 100%; max-width: 500px;
+                    width: 100%; max-width: 460px;
                     text-align: left;
                 }
                 
                 h1 { 
-                    color: #ffffff; margin: 0 0 8px 0; 
-                    font-size: 24px; font-weight: 800;
-                    letter-spacing: -0.5px;
+                    color: #ffffff; margin: 0 0 6px 0; 
+                    font-size: 19px; font-weight: 800;
+                    letter-spacing: -0.4px;
                 }
                 
                 .subtitle { 
                     color: #b9bbbe; margin: 0;
-                    font-size: 15px; font-weight: 400;
+                    font-size: 13px; font-weight: 400;
                 }
                 
                 .guild-name {
@@ -878,55 +961,60 @@ def create_oauth_app():
                 .divider {
                     height: 1px;
                     background: linear-gradient(90deg, rgba(255,255,255,0.0), rgba(255,255,255,0.1), rgba(255,255,255,0.0));
-                    margin: 30px 0;
+                    margin: 20px 0;
                 }
                 
                 .section-title { 
-                    margin: 0 0 10px 0; 
-                    font-size: 18px; 
+                    margin: 0 0 8px 0; 
+                    font-size: 15px; 
                     font-weight: 700; color: #ffffff;
                     display: flex; align-items: center; gap: 8px;
                 }
                 
                 .section-desc {
-                    color: #b9bbbe; margin-bottom: 25px;
-                    font-size: 14px;
+                    color: #b9bbbe; margin-bottom: 16px;
+                    font-size: 13px;
                 }
                 
                 .btn {
                     background: linear-gradient(135deg, #5865f2 0%, #4752c4 100%);
-                    color: white; padding: 12px 24px;
-                    border: none; border-radius: 12px; font-weight: 600;
-                    cursor: pointer; font-size: 15px; width: 100%;
-                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                    color: white; padding: 11px 20px;
+                    border: none; border-radius: 10px; font-weight: 600;
+                    cursor: pointer; font-size: 14px; width: 100%;
+                    transition: transform 0.2s, box-shadow 0.2s, filter 0.2s;
                     text-align: center; 
-                    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+                    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
                     text-decoration: none;
-                    box-shadow: 0 4px 15px rgba(88, 101, 242, 0.2);
+                    box-shadow: 0 6px 16px rgba(88, 101, 242, 0.2);
                     box-sizing: border-box;
                     position: relative; 
+                    overflow: hidden;
                 }
                 
                 .btn::before {
                     content: '';
                     position: absolute;
-                    top: 0; left: -100%; width: 100%; height: 100%;
-                    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-                    transition: left 0.5s;
+                    top: 0;
+                    left: -100%; 
+                    width: 100%;
+                    height: 100%;
+                    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+                    transition: left 0.5s; 
                 }
                 
-                .btn:hover::before { left: 100%; }
-                
                 .btn:hover {
-                    transform: translateY(-2px);
-                    box-shadow: 0 8px 25px rgba(88, 101, 242, 0.3);
+                    transform: translateY(-1px);
+                    box-shadow: 0 10px 24px rgba(88, 101, 242, 0.35);
                     filter: brightness(1.1);
                 }
                 
-                .github-icon { width: 20px; height: 20px; fill: currentColor; }
+                .btn:hover::before {
+                    left: 100%; 
+                }
+                .github-icon { width: 18px; height: 18px; fill: currentColor; }
                 
                 .footer-text {
-                    margin-top: 32px; font-size: 13px; color: #82858f;
+                    margin-top: 24px; font-size: 12px; color: #82858f;
                     text-align: center;
                 }
                 
@@ -1008,53 +1096,54 @@ def create_oauth_app():
             if not success:
                 return "Error: Failed to save configuration", 500
             
+            # Trigger initial sync and Discord notification
+            # Auto-discovery will find the installation ID for the REPO_OWNER
+            trigger_initial_sync(guild_id, github_org)
+            notify_setup_complete(guild_id, github_org)
             
             success_page = """
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Setup Completed!d!</title>
+                <title>Setup Completed!</title>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <link rel="preconnect" href="https://fonts.googleapis.com">
                 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
                 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
                 <style>
+                    html {
+                        background-color: #0f1012;
+                        overflow: hidden;
+                    }
+                    
                     body {
                         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-                        margin: 0; padding: 20px;
+                        margin: 0; padding: 15px;
                         background: radial-gradient(circle at top left, #2c2e33 0%, #0f1012 100%);
                         color: #e1e1e1;
                         height: 100vh;
                         display: flex; align-items: center; justify-content: center;
                         box-sizing: border-box;
-                        line-height: 1.6;
-                        overflow: hidden;
+                        line-height: 1.5;
                     }
 
-                    @media (max-width: 550px) {
-                        .card { width: 90%; padding: 30px; }
-                        h1 { font-size: 22px; }
+                    @media (max-width: 480px) {
+                        html { overflow: auto; }
+                        .card { width: 95%; padding: 20px; }
+                        h1 { font-size: 18px; }
                     }
 
-                    @media (max-height: 700px) {
-                        .card { padding: 25px; }
-                        .divider { margin: 20px 0; }
-                    }
-                    
                     .card {
-                        background: rgba(30, 31, 34, 0.75);
+                        background: rgba(30, 31, 34, 0.8);
                         backdrop-filter: blur(16px);
                         -webkit-backdrop-filter: blur(16px);
                         border: 1px solid rgba(255, 255, 255, 0.08);
-                        padding: 40px; 
-                        border-radius: 24px;
+                        padding: 24px 32px; border-radius: 20px;
                         box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-                        width: 100%; 
-                        max-width: 500px;
+                        width: 100%; max-width: 460px;
                         text-align: left;
                         position: relative;
-                        
                     }
 
                     .card::before {
@@ -1066,7 +1155,7 @@ def create_oauth_app():
                     
                     .success-icon { 
                         color: #43b581; 
-                        width: 28px; height: 28px; 
+                        width: 24px; height: 24px; 
                         animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
                     }
 
@@ -1077,13 +1166,13 @@ def create_oauth_app():
 
                     h1 { 
                         color: #ffffff; margin: 0;
-                        font-size: 26px; font-weight: 800;
-                        letter-spacing: -0.5px;
+                        font-size: 19px; font-weight: 800;
+                        letter-spacing: -0.4px;
                     }
                     
                     .subtitle { 
                         color: #b9bbbe; margin: 0;
-                        font-size: 15px; font-weight: 400;
+                        font-size: 13px; font-weight: 400;
                     }
                     
                     .highlight { color: #fff; font-weight: 600; }
@@ -1091,12 +1180,12 @@ def create_oauth_app():
                     .divider {
                         height: 1px;
                         background: linear-gradient(90deg, rgba(255,255,255,0.0), rgba(255,255,255,0.1), rgba(255,255,255,0.0));
-                        margin: 30px 0;
+                        margin: 20px 0;
                     }
                     
                     .section-title { 
-                        margin: 0 0 15px 0; 
-                        font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+                        margin: 0 0 12px 0; 
+                        font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px;
                         font-weight: 700; color: #949BA4;
                     }
                     
