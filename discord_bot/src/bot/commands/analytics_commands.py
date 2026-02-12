@@ -25,6 +25,7 @@ class AnalyticsCommands:
     
     def _show_top_contributors_command(self):
         """Create the show-top-contributors command."""
+        @app_commands.guild_only()
         @app_commands.command(name="show-top-contributors", description="Show top contributors chart")
         async def show_top_contributors(interaction: discord.Interaction):
             await interaction.response.defer()
@@ -54,6 +55,7 @@ class AnalyticsCommands:
     
     def _show_activity_comparison_command(self):
         """Create the show-activity-comparison command."""
+        @app_commands.guild_only()
         @app_commands.command(name="show-activity-comparison", description="Show activity comparison chart")
         async def show_activity_comparison(interaction: discord.Interaction):
             await interaction.response.defer()
@@ -83,6 +85,7 @@ class AnalyticsCommands:
     
     def _show_activity_trends_command(self):
         """Create the show-activity-trends command."""
+        @app_commands.guild_only()
         @app_commands.command(name="show-activity-trends", description="Show recent activity trends")
         async def show_activity_trends(interaction: discord.Interaction):
             await interaction.response.defer()
@@ -112,6 +115,7 @@ class AnalyticsCommands:
     
     def _show_time_series_command(self):
         """Create the show-time-series command."""
+        @app_commands.guild_only()
         @app_commands.command(name="show-time-series", description="Show time series chart with customizable metrics and date range")
         @app_commands.describe(
             metrics="Comma-separated metrics to display (prs,issues,commits,total)",

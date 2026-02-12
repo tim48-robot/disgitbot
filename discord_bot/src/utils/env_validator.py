@@ -62,6 +62,10 @@ FIELD_CONFIG = {
     'GITHUB_APP_SLUG': {
         'required': True,
         'description': 'GitHub App slug (the /apps/<slug> part)'
+    },
+    'SECRET_KEY': {
+        'required': True,
+        'description': 'Flask session signing secret key (generate with: python3 -c "import secrets; print(secrets.token_hex(32))")'
     }
 }
 

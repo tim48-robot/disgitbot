@@ -5,9 +5,12 @@ Server configuration commands for role mappings and setup checks.
 """
 
 import asyncio
+import logging
 import discord
 from discord import app_commands
 from shared.firestore import get_mt_client
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigCommands:
@@ -102,8 +105,18 @@ class ConfigCommands:
                     return
 
                 # Role hierarchy validation: bot must be able to manage this role
-                bot_member = guild.get_member(self.bot.user.id)
-                if bot_member and bot_member.top_role.position <= role.position:
+                bot_member = guild.me
+                if bot_member is None:
+                    try:
+                        bot_member = await guild.fetch_member(self.bot.user.id)
+                    except Exception:
+                        logger.warning(f"Could not fetch bot member in guild {guild.id}")
+                        await interaction.followup.send(
+                            "❌ Unable to verify role permissions. Please ensure I have the Manage Roles permission.",
+                            ephemeral=True
+                        )
+                        return
+                if bot_member.top_role.position <= role.position:
                     await interaction.followup.send(
                         f"❌ Cannot add rule for @{role.name}.\n"
                         f"This role is positioned **equal to or higher** than my top role (@{bot_member.top_role.name}).\n"

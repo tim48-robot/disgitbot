@@ -7,6 +7,8 @@ Clean, modular Discord bot initialization and setup.
 import asyncio
 import os
 import sys
+from datetime import datetime, timedelta, timezone
+
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -73,10 +75,11 @@ class DiscordBot:
                     # Check if we sent a reminder very recently (24h cooldown)
                     last_reminder = server_config.get('setup_reminder_sent_at')
                     if last_reminder:
-                        from datetime import datetime, timedelta
                         try:
                             last_dt = datetime.fromisoformat(last_reminder)
-                            if datetime.now() - last_dt < timedelta(hours=24):
+                            if last_dt.tzinfo is None:
+                                last_dt = last_dt.replace(tzinfo=timezone.utc)
+                            if datetime.now(timezone.utc) - last_dt < timedelta(hours=24):
                                 print(f"Skipping setup guidance for {guild.name}: already sent within 24h")
                                 return
                         except ValueError:
@@ -115,10 +118,9 @@ After setup, try these commands:
                         await system_channel.send(setup_message)
                         
                         # Mark reminder as sent
-                        from datetime import datetime
                         await asyncio.to_thread(mt_client.set_server_config, str(guild.id), {
                             **server_config,
-                            'setup_reminder_sent_at': datetime.now().isoformat()
+                            'setup_reminder_sent_at': datetime.now(timezone.utc).isoformat()
                         })
                         print(f"Sent setup guidance to server: {guild.name} (ID: {guild.id})")
 
