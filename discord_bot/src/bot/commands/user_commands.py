@@ -155,7 +155,7 @@ class UserCommands:
 
     def _empty_user_stats(self, last_updated: str | None = None) -> dict:
         """Return an empty stats payload for users with no synced data yet."""
-        current_month = datetime.datetime.utcnow().strftime("%B")
+        current_month = datetime.datetime.now(datetime.timezone.utc).strftime("%B")
         return {
             "pr_count": 0,
             "issues_count": 0,

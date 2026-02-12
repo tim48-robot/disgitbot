@@ -33,14 +33,14 @@ These are already in your `.env.example`:
 PR automation is currently commented out to simplify the SaaS experience. To re-enable it:
 
 ### 1. Uncomment Command Registration
-In [discord_bot/src/bot/commands/admin_commands.py](file:///home/justin/opensource/disgitbot/discord_bot/src/bot/commands/admin_commands.py):
+In `discord_bot/src/bot/commands/admin_commands.py`:
 ```python
 # In register_commands():
 self.bot.tree.add_command(self._add_reviewer_command())
 self.bot.tree.add_command(self._remove_reviewer_command())
 ```
 
-In [discord_bot/src/bot/commands/notification_commands.py](file:///home/justin/opensource/disgitbot/discord_bot/src/bot/commands/notification_commands.py):
+In `discord_bot/src/bot/commands/notification_commands.py`:
 ```python
 # In register_commands():
 # self.bot.tree.add_command(self._webhook_status_command())

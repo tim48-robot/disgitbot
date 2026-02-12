@@ -1,6 +1,6 @@
 import os
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from shared.firestore import get_mt_client
 import threading
 import time
@@ -139,7 +139,9 @@ def trigger_initial_sync(guild_id: str, org_name: str, installation_id: Optional
     if last_trigger:
         try:
             last_dt = datetime.fromisoformat(last_trigger)
-            if datetime.now() - last_dt < timedelta(minutes=10):
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) - last_dt < timedelta(minutes=10):
                 print("Skipping pipeline trigger: recent sync already triggered")
                 return False
         except ValueError:
@@ -163,7 +165,7 @@ def trigger_initial_sync(guild_id: str, org_name: str, installation_id: Optional
         if resp.status_code in (201, 204):
             mt_client.set_server_config(guild_id, {
                 **existing_config,
-                "initial_sync_triggered_at": datetime.now().isoformat()
+                "initial_sync_triggered_at": datetime.now(timezone.utc).isoformat()
             })
             return True
         print(f"Failed to trigger pipeline: {resp.status_code} {resp.text[:200]}")
@@ -335,7 +337,7 @@ def create_oauth_app():
             f"scope=bot+applications.commands"
         )
         
-        setup_url = f"{base_url}/setup"
+
         
         # Enhanced landing page with modern design
         landing_page = f"""
