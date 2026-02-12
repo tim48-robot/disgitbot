@@ -19,6 +19,35 @@ load_dotenv()
 oauth_sessions = {}
 oauth_sessions_lock = threading.Lock()
 
+# Event-driven link notification system
+# Maps discord_user_id -> asyncio.Event (set when OAuth completes/fails)
+_link_events = {}
+_link_events_lock = threading.Lock()
+
+def register_link_event(discord_user_id: str, event) -> None:
+    """Register an asyncio.Event for a pending /link command."""
+    with _link_events_lock:
+        _link_events[discord_user_id] = event
+
+def unregister_link_event(discord_user_id: str) -> None:
+    """Clean up link event after /link completes or times out."""
+    with _link_events_lock:
+        _link_events.pop(discord_user_id, None)
+
+def _notify_link_event(discord_user_id: str) -> None:
+    """Wake up the waiting /link command from the Flask thread.
+    
+    Called after oauth_sessions is updated with the result.
+    Uses call_soon_threadsafe to safely set the asyncio.Event
+    from the Flask (non-asyncio) thread.
+    """
+    with _link_events_lock:
+        event = _link_events.get(discord_user_id)
+    if event:
+        from . import shared
+        if shared.bot_instance and shared.bot_instance.bot:
+            shared.bot_instance.bot.loop.call_soon_threadsafe(event.set)
+
 # Background thread to clean up old OAuth sessions (prevents memory leak)
 def cleanup_old_oauth_sessions():
     """Clean up OAuth sessions older than 10 minutes to prevent memory leak."""
@@ -565,6 +594,7 @@ def create_oauth_app():
                         'status': 'failed',
                         'error': 'GitHub authorization failed'
                     }
+                _notify_link_event(discord_user_id)
                 return "GitHub authorization failed", 400
 
             resp = github.get("/user")
@@ -575,6 +605,7 @@ def create_oauth_app():
                         'status': 'failed',
                         'error': 'Failed to fetch GitHub user info'
                     }
+                _notify_link_event(discord_user_id)
                 return "Failed to fetch GitHub user information", 400
 
             github_user = resp.json()
@@ -587,6 +618,7 @@ def create_oauth_app():
                         'status': 'failed',
                         'error': 'No GitHub username found'
                     }
+                _notify_link_event(discord_user_id)
                 return "Failed to get GitHub username", 400
 
             with oauth_sessions_lock:
@@ -594,6 +626,7 @@ def create_oauth_app():
                     'status': 'completed',
                     'github_username': github_username
                 }
+            _notify_link_event(discord_user_id)
 
             session.pop('discord_user_id', None)
 
@@ -1283,33 +1316,3 @@ def get_github_username_for_user(discord_user_id):
     
     return f"{base_url}/auth/start/{discord_user_id}"
 
-def wait_for_username(discord_user_id, max_wait_time=300):
-    """Wait for OAuth completion by polling the status"""
-    start_time = time.time()
-    
-    while time.time() - start_time < max_wait_time:
-        with oauth_sessions_lock:
-            session_data = oauth_sessions.get(discord_user_id)
-            
-            if session_data:
-                if session_data['status'] == 'completed':
-                    github_username = session_data.get('github_username')
-                    # Clean up
-                    del oauth_sessions[discord_user_id]
-                    return github_username
-                elif session_data['status'] == 'failed':
-                    error = session_data.get('error', 'Unknown error')
-                    print(f"OAuth failed for {discord_user_id}: {error}")
-                    # Clean up
-                    del oauth_sessions[discord_user_id]
-                    return None
-        
-        time.sleep(2)  # Poll every 2 seconds
-    
-    print(f"OAuth timeout for Discord user: {discord_user_id}")
-    # Clean up timeout session
-    with oauth_sessions_lock:
-        if discord_user_id in oauth_sessions:
-            del oauth_sessions[discord_user_id]
-    
-    return None

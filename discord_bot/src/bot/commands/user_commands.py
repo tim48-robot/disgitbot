@@ -7,10 +7,9 @@ Handles user-related Discord commands like linking, stats, and hall of fame.
 import discord
 from discord import app_commands
 import asyncio
-import threading
 import datetime
 from ...services.role_service import RoleService
-from ..auth import get_github_username_for_user, wait_for_username
+from ..auth import get_github_username_for_user, register_link_event, unregister_link_event, oauth_sessions, oauth_sessions_lock
 from shared.firestore import get_document, set_document, get_mt_client
 
 class UserCommands:
@@ -18,7 +17,7 @@ class UserCommands:
 
     def __init__(self, bot):
         self.bot = bot
-        self.verification_lock = threading.Lock()
+        self._active_links: set[str] = set()  # Per-user tracking, not global lock
 
     async def _safe_defer(self, interaction):
         """Safely defer interaction with error handling."""
@@ -62,12 +61,14 @@ class UserCommands:
         async def link(interaction: discord.Interaction):
             await self._safe_defer(interaction)
 
-            if not self.verification_lock.acquire(blocking=False):
-                await self._safe_followup(interaction, "The verification process is currently busy. Please try again later.")
+            discord_user_id = str(interaction.user.id)
+
+            if discord_user_id in self._active_links:
+                await self._safe_followup(interaction, "You already have a link process in progress. Please complete it or wait for it to expire.")
                 return
 
+            self._active_links.add(discord_user_id)
             try:
-                discord_user_id = str(interaction.user.id)
                 discord_server_id = str(interaction.guild.id)
                 mt_client = get_mt_client()
 
@@ -91,9 +92,29 @@ class UserCommands:
                 oauth_url = get_github_username_for_user(discord_user_id)
                 await self._safe_followup(interaction, f"Please complete GitHub authentication: {oauth_url}")
 
-                github_username = await asyncio.get_event_loop().run_in_executor(
-                    None, wait_for_username, discord_user_id
-                )
+                # Event-driven wait: no threads tied up, Flask callback wakes us instantly
+                link_event = asyncio.Event()
+                register_link_event(discord_user_id, link_event)
+                try:
+                    await asyncio.wait_for(link_event.wait(), timeout=300)
+                except asyncio.TimeoutError:
+                    # Clean up timed-out OAuth session
+                    with oauth_sessions_lock:
+                        oauth_sessions.pop(discord_user_id, None)
+                    await self._safe_followup(interaction, "Authentication timed out or failed. Please try again.")
+                    return
+                finally:
+                    unregister_link_event(discord_user_id)
+
+                # Event fired — read result from oauth_sessions
+                github_username = None
+                with oauth_sessions_lock:
+                    session_data = oauth_sessions.pop(discord_user_id, None)
+                if session_data and session_data.get('status') == 'completed':
+                    github_username = session_data.get('github_username')
+                elif session_data and session_data.get('status') == 'failed':
+                    error = session_data.get('error', 'Unknown error')
+                    print(f"OAuth failed for {discord_user_id}: {error}")
 
                 if github_username:
 
@@ -128,7 +149,7 @@ class UserCommands:
                 print("Error in /link:", e)
                 await self._safe_followup(interaction, "Failed to link GitHub account.")
             finally:
-                self.verification_lock.release()
+                self._active_links.discard(discord_user_id)
         
         return link
 
