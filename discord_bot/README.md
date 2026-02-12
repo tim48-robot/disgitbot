@@ -126,7 +126,7 @@ cp discord_bot/config/.env.example discord_bot/config/.env
 - `DISCORD_BOT_TOKEN=` (Discord bot authentication)
 - `GITHUB_CLIENT_ID=` (GitHub OAuth app ID)
 - `GITHUB_CLIENT_SECRET=` (GitHub OAuth app secret)
-- `OAUTH_BASE_URL=` (Your Cloud Run URL - set in Step 4)
+- `OAUTH_BASE_URL=` (Your Cloud Run URL - set in Step 3)
 - `DISCORD_BOT_CLIENT_ID=` (Discord application ID)
 - `GITHUB_APP_ID=` (GitHub App ID)
 - `GITHUB_APP_PRIVATE_KEY_B64=` (GitHub App private key, base64)
@@ -296,7 +296,7 @@ If you plan to run GitHub Actions from branches other than `main`, also add the 
    - Click "New OAuth App"
 3. **Fill in Application Details:**
    - **Application name:** `Your Bot Name` (anything you want)
-   - **Homepage URL:** `YOUR_CLOUD_RUN_URL` (from Step 4)
+   - **Homepage URL:** `YOUR_CLOUD_RUN_URL` (from Step 3)
    - **Authorization callback URL:** `YOUR_CLOUD_RUN_URL/login/github/authorized`
    
    **Example URLs:** If your Cloud Run URL is `https://discord-bot-abcd1234-uc.a.run.app`, then:

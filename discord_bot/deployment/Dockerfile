@@ -20,7 +20,7 @@ COPY requirements.txt .
 COPY pr_review ./pr_review
 
 # Upgrade pip to latest version to avoid upgrade notices
-RUN pip install --upgrade pip
+RUN pip install --no-cache-dir --upgrade pip
 
 # Install dependencies from both requirements files
 RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt -r pr_review/requirements.txt

@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from shared.firestore import get_document, set_document
 
 logger = logging.getLogger(__name__)
@@ -100,7 +100,7 @@ class NotificationService:
             "title": f"PR #{pr_number} Automation Complete",
             "description": f"Automated processing completed for [{repo}](https://github.com/{repo}/pull/{pr_number})",
             "color": color,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "fields": []
         }
         
@@ -182,7 +182,7 @@ class NotificationService:
             "title": f"{config['emoji']} {config['title']}",
             "description": f"[{workflow_name}]({run_url}) in [{repo}](https://github.com/{repo})",
             "color": config['color'],
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "fields": [
                 {
                     "name": "Repository",
@@ -204,7 +204,7 @@ class NotificationService:
         
         return embed
     
-    async def _get_webhook_urls(self, notification_type: str, github_org: str = None) -> List[str]:
+    async def _get_webhook_urls(self, notification_type: str, github_org: str | None = None) -> List[str]:
         """Get all webhook URLs for specified notification type."""
         urls = []
         try:
@@ -270,7 +270,7 @@ class WebhookManager:
     """Manages webhook URL configuration and repository monitoring."""
     
     @staticmethod
-    def set_webhook_url(notification_type: str, webhook_url: str, discord_server_id: str = None) -> bool:
+    def set_webhook_url(notification_type: str, webhook_url: str, discord_server_id: str | None = None) -> bool:
         """Set webhook URL for specified notification type."""
         try:
             webhook_config = get_document('pr_config', 'webhooks', discord_server_id=discord_server_id) or {}
@@ -290,12 +290,12 @@ class WebhookManager:
                 'type': notification_type,
                 'url': webhook_url,
                 'server_id': discord_server_id,
-                'last_updated': datetime.utcnow().isoformat()
+                'last_updated': datetime.now(timezone.utc).isoformat()
             })
             
             # Maintain legacy field for backward compatibility
             webhook_config[f'{notification_type}_webhook_url'] = webhook_url
-            webhook_config['last_updated'] = datetime.utcnow().isoformat()
+            webhook_config['last_updated'] = datetime.now(timezone.utc).isoformat()
             
             return set_document('pr_config', 'webhooks', webhook_config, discord_server_id=discord_server_id)
         except Exception as e:
@@ -303,7 +303,7 @@ class WebhookManager:
             return False
     
     @staticmethod
-    def get_monitored_repositories(discord_server_id: str = None) -> List[str]:
+    def get_monitored_repositories(discord_server_id: str | None = None) -> List[str]:
         """Get list of repositories being monitored for CI/CD notifications."""
         try:
             config = get_document('pr_config', 'monitoring', discord_server_id=discord_server_id)
@@ -315,7 +315,7 @@ class WebhookManager:
             return []
     
     @staticmethod
-    def add_monitored_repository(repo: str, discord_server_id: str = None) -> bool:
+    def add_monitored_repository(repo: str, discord_server_id: str | None = None) -> bool:
         """Add repository to CI/CD monitoring list."""
         try:
             config = get_document('pr_config', 'monitoring', discord_server_id=discord_server_id) or {'repositories': []}
@@ -324,7 +324,7 @@ class WebhookManager:
             if repo not in repos:
                 repos.append(repo)
                 config['repositories'] = repos
-                config['last_updated'] = datetime.utcnow().isoformat()
+                config['last_updated'] = datetime.now(timezone.utc).isoformat()
                 
                 return set_document('pr_config', 'monitoring', config, discord_server_id=discord_server_id)
             return True  # Already exists
@@ -333,7 +333,7 @@ class WebhookManager:
             return False
     
     @staticmethod
-    def remove_monitored_repository(repo: str, discord_server_id: str = None) -> bool:
+    def remove_monitored_repository(repo: str, discord_server_id: str | None = None) -> bool:
         """Remove repository from CI/CD monitoring list."""
         try:
             config = get_document('pr_config', 'monitoring', discord_server_id=discord_server_id)
@@ -344,7 +344,7 @@ class WebhookManager:
             if repo in repos:
                 repos.remove(repo)
                 config['repositories'] = repos
-                config['last_updated'] = datetime.utcnow().isoformat()
+                config['last_updated'] = datetime.now(timezone.utc).isoformat()
                 
                 return set_document('pr_config', 'monitoring', config, discord_server_id=discord_server_id)
             return True  # Already removed
