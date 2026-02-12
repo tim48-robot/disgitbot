@@ -684,10 +684,95 @@ def create_oauth_app():
         from src.services.github_app_service import GitHubAppService
 
         installation_id = request.args.get('installation_id')
+        setup_action = request.args.get('setup_action')
         state = request.args.get('state', '')
 
-        if not installation_id or not state:
-            return "Missing installation_id or state", 400
+        if not state:
+            return "Missing state parameter. Please restart setup from Discord.", 400
+
+        if not installation_id:
+            if setup_action == 'request':
+                # Handle installation request from non-owner
+                try:
+                    payload = state_serializer.loads(state, max_age=60 * 60 * 24 * 7)
+                    guild_name = payload.get('guild_name', 'your server')
+                except:
+                    return "Installation requested, but session expired. Please restart setup from Discord.", 400
+
+                pending_page = """
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Setup Requested</title>
+                    <meta charset="utf-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <link rel="preconnect" href="https://fonts.googleapis.com">
+                    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+                    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+                    <style>
+                        html { background-color: #0f1012; }
+                        body {
+                            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                            margin: 0; padding: 20px;
+                            background: radial-gradient(circle at top left, #2c2e33 0%, #0f1012 100%);
+                            color: #e1e1e1;
+                            height: 100vh;
+                            display: flex; align-items: center; justify-content: center;
+                            box-sizing: border-box;
+                            line-height: 1.6;
+                        }
+                        .card {
+                            background: rgba(30, 31, 34, 0.75);
+                            backdrop-filter: blur(16px);
+                            -webkit-backdrop-filter: blur(16px);
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            padding: 40px; border-radius: 24px;
+                            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+                            width: 100%; max-width: 500px;
+                            text-align: center;
+                            position: relative;
+                        }
+                        .card::before {
+                            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+                            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+                        }
+                        .icon { color: #f1c40f; width: 48px; height: 48px; margin-bottom: 20px; }
+                        h1 { color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+                        .subtitle { color: #b9bbbe; margin: 10px 0 30px 0; font-size: 15px; }
+                        .instructions {
+                            text-align: left; background: rgba(255,255,255,0.03);
+                            padding: 20px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05);
+                        }
+                        .step { display: flex; gap: 12px; margin-bottom: 12px; font-size: 14px; }
+                        .step-num { color: #8ea0e1; font-weight: 700; }
+                        .footer { margin-top: 30px; font-size: 13px; color: #82858f; }
+                    </style>
+                </head>
+                <body>
+                    <div class="card">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                        <h1>Setup Requested!</h1>
+                        <p class="subtitle">You don't have permission to install apps on this organization, so a request has been sent.</p>
+                        
+                        <div class="instructions">
+                            <div class="step">
+                                <span class="step-num">1.</span>
+                                <span>The organization owner will receive a notification to approve the installation of <strong>DisgitBot</strong>.</span>
+                            </div>
+                            <div class="step">
+                                <span class="step-num">2.</span>
+                                <span>Once approved, you can return to Discord and run the <code>/setup</code> command again to complete the connection for <strong>{{ guild_name }}</strong>.</span>
+                            </div>
+                        </div>
+                        
+                        <p class="footer">You can safely close this window.</p>
+                    </div>
+                </body>
+                </html>
+                """
+                return render_template_string(pending_page, guild_name=guild_name)
+            
+            return "Missing installation_id. Please ensure you have permission to install apps onto your organization.", 400
 
         try:
             payload = state_serializer.loads(state, max_age=60 * 60 * 24 * 7)  # 7 days for org approval
