@@ -25,6 +25,19 @@ This document explains how to manage the environment variables and how to re-ena
 - Once a GitHub App is installed on an org, **any Discord server** can connect to it via `/setup` without needing another approval.
 - `/add_repo` and `/remove_repo` are **scoped to the configured org** — you can only monitor repos within your connected GitHub organization.
 
+### `/sync` — Per-Server Cooldown, Shared Pipeline
+
+- The **12-hour cooldown is per Discord server** (keyed on `guild_id`). Each server stores its own `last_sync_at` + `last_sync_status` in `discord_servers/{guild_id}/config`.
+- Two Discord servers connected to the **same GitHub org** each have independent cooldowns. If both trigger `/sync`, the pipeline runs twice on the same org's data — wasteful but harmless.
+- The pipeline itself writes to `organizations/{github_org}/...`, which is shared. Running it twice back-to-back on the same org is safe (idempotent write).
+- `trigger_initial_sync()` always bypasses the cooldown (`respect_cooldown=False`) so the first sync after `/setup` always fires.
+
+### Voice Channel Stats — Per-Guild, Updated by Pipeline
+
+- Each Discord server gets its own `REPOSITORY STATS` voice-channel category. The pipeline iterates over **all guilds** the bot is in and updates each one.
+- The channels reflect org-level metrics (stars, forks, contributors, PRs, issues, commits) fetched from `organizations/{github_org}/...`.
+- **Duplicate category root cause:** `discord.utils.get()` only returns the first matching category. If `/setup_voice_stats` and the pipeline's `_update_channels_for_guild` both run near-simultaneously (e.g., first deploy + immediate pipeline trigger), both find no existing category and both create one, resulting in two `REPOSITORY STATS` categories. The fix: scan for *all* categories with that name, keep the first, delete the rest. `/setup_voice_stats` now also detects and cleans up duplicates automatically.
+
 ---
 
 ## Environment Variables

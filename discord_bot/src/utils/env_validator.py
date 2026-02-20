@@ -69,7 +69,8 @@ FIELD_CONFIG = {
     },
     'REPO_OWNER': {
         'required': False,
-        'description': 'GitHub account/org that owns the disgitbot repo and has the GitHub App installed with Actions (read & write). Required for /sync to work.'
+        'description': 'GitHub account/org that owns the disgitbot repo and has the GitHub App installed with Actions (read & write). Required for /sync to work. Defaults to ruxailab if not set.',
+        'warning_if_empty': 'REPO_OWNER is empty — defaulting to ruxailab. Set this if your pipeline repo lives under a different org/user.'
     },
     'REPO_NAME': {
         'required': False,

@@ -241,7 +241,8 @@ def _save_sync_metadata(mt_client, guild_id: str, existing_config: dict, status:
         update["last_sync_error"] = error
     elif "last_sync_error" in update:
         del update["last_sync_error"]
-    mt_client.set_server_config(guild_id, update)
+    if not mt_client.set_server_config(guild_id, update):
+        print(f"Warning: failed to persist sync metadata for guild {guild_id}")
 
 
 def trigger_initial_sync(guild_id: str, org_name: str, installation_id: Optional[int] = None) -> bool:
