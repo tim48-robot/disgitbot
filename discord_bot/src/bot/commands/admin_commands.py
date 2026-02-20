@@ -234,9 +234,25 @@ This setup is required only once per server."""
                 guild = interaction.guild
                 assert guild is not None, "Command should only work in guilds"
                 
-                existing_category = discord.utils.get(guild.categories, name="REPOSITORY STATS")
-                
-                if existing_category:
+                all_stats_categories = [c for c in guild.categories if c.name == "REPOSITORY STATS"]
+                if len(all_stats_categories) > 1:
+                    # Clean up duplicates — keep the first, delete the rest
+                    for dup in all_stats_categories[1:]:
+                        for ch in dup.channels:
+                            try:
+                                await ch.delete()
+                            except Exception:
+                                pass
+                        try:
+                            await dup.delete()
+                        except Exception:
+                            pass
+                    await interaction.followup.send(
+                        "⚠️ Found duplicate stats categories — cleaned up. "
+                        "One 'REPOSITORY STATS' category remains. "
+                        "Stats are updated daily via automated workflow."
+                    )
+                elif all_stats_categories:
                     await interaction.followup.send("Repository stats display already exists! Stats are updated daily via automated workflow.")
                 else:
                     await guild.create_category("REPOSITORY STATS")
