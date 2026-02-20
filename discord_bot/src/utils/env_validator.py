@@ -212,23 +212,18 @@ def validate_env_strict(env_example_path: str, env_path: str) -> dict:
             result['errors'].append(f"Failed to read .env: {e}")
             return result
         
-        # 1. CHECK LINE COUNT MATCHES EXACTLY
-        if len(example_lines) != len(env_lines):
+        # 1. CHECK LINE COUNT
+        # Extra lines beyond .env.example are always an error.
+        # Fewer lines are allowed — optional vars at the end can be omitted;
+        # FIELD_CONFIG handles missing optional fields as warnings below.
+        if len(env_lines) > len(example_lines):
+            extra_count = len(env_lines) - len(example_lines)
             result['format_errors'].append(
-                f"Line count mismatch: expected {len(example_lines)} lines, found {len(env_lines)} lines"
+                f"Line count mismatch: expected at most {len(example_lines)} lines, found {len(env_lines)} lines"
             )
-            
-            # Show which lines are extra/missing
-            if len(env_lines) > len(example_lines):
-                extra_count = len(env_lines) - len(example_lines)
-                result['format_errors'].append(
-                    f"Found {extra_count} extra line(s) at the end (lines {len(example_lines)+1}-{len(env_lines)})"
-                )
-            else:
-                missing_count = len(example_lines) - len(env_lines)
-                result['format_errors'].append(
-                    f"Missing {missing_count} line(s) at the end"
-                )
+            result['format_errors'].append(
+                f"Found {extra_count} extra line(s) at the end (lines {len(example_lines)+1}-{len(env_lines)})"
+            )
         
         # 2. FOR EACH LINE: COMPARE VARIABLE NAMES (left of =) ONLY
         max_lines = min(len(example_lines), len(env_lines))  # Only compare existing lines
@@ -285,8 +280,8 @@ def validate_env_strict(env_example_path: str, env_path: str) -> dict:
             if env_data.get('format_issues'):
                 result['format_errors'].extend(env_data['format_issues'])
             
-            # Only validate field requirements if structure matches
-            if len(example_lines) == len(env_lines) and len(result['line_mismatches']) == 0:
+            # Only validate field requirements if structure matches (no extra lines, no key mismatches)
+            if len(env_lines) <= len(example_lines) and len(result['line_mismatches']) == 0:
                 # Check all configured fields based on their requirements
                 for field_name, field_config in FIELD_CONFIG.items():
                     is_required = field_config.get('required', True)
