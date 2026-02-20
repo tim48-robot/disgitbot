@@ -357,7 +357,14 @@ create_new_env_file() {
         secret_key=$(python3 -c "import secrets; print(secrets.token_hex(32))")
         print_success "Auto-generated SECRET_KEY"
     fi
-    
+
+    # /sync optional vars
+    echo -e "\n${BLUE}Optional: /sync command (manually trigger the data pipeline).${NC}"
+    echo -e "${BLUE}Leave blank to use defaults (REPO_OWNER=ruxailab, REPO_NAME=disgitbot, WORKFLOW_REF=main).${NC}"
+    read -p "REPO_OWNER (GitHub org that owns the pipeline repo) [ruxailab]: " repo_owner
+    read -p "REPO_NAME (pipeline repo name) [disgitbot]: " repo_name
+    read -p "WORKFLOW_REF (branch/tag to dispatch on) [main]: " workflow_ref
+
     # Create .env file
     cat > "$ENV_PATH" << EOF
 DISCORD_BOT_TOKEN=$discord_token
@@ -369,6 +376,9 @@ GITHUB_APP_ID=$github_app_id
 GITHUB_APP_PRIVATE_KEY_B64=$github_app_private_key_b64
 GITHUB_APP_SLUG=$github_app_slug
 SECRET_KEY=$secret_key
+REPO_OWNER=$repo_owner
+REPO_NAME=$repo_name
+WORKFLOW_REF=$workflow_ref
 EOF
     
     print_success ".env file created successfully!"
@@ -414,7 +424,16 @@ edit_env_file() {
         secret_key=$(python3 -c "import secrets; print(secrets.token_hex(32))")
         print_success "Generated: $secret_key"
     fi
-    
+
+    # /sync optional vars
+    echo -e "\n${BLUE}Optional: /sync vars (press Enter to keep current or use default).${NC}"
+    read -p "REPO_OWNER [${REPO_OWNER:-ruxailab}]: " new_repo_owner
+    repo_owner=${new_repo_owner:-${REPO_OWNER:-}}
+    read -p "REPO_NAME [${REPO_NAME:-disgitbot}]: " new_repo_name
+    repo_name=${new_repo_name:-${REPO_NAME:-}}
+    read -p "WORKFLOW_REF [${WORKFLOW_REF:-main}]: " new_workflow_ref
+    workflow_ref=${new_workflow_ref:-${WORKFLOW_REF:-}}
+
     # Update .env file
     cat > "$ENV_PATH" << EOF
 DISCORD_BOT_TOKEN=$discord_token
@@ -426,6 +445,9 @@ GITHUB_APP_ID=$github_app_id
 GITHUB_APP_PRIVATE_KEY_B64=$github_app_private_key_b64
 GITHUB_APP_SLUG=$github_app_slug
 SECRET_KEY=$secret_key
+REPO_OWNER=$repo_owner
+REPO_NAME=$repo_name
+WORKFLOW_REF=$workflow_ref
 EOF
     
     print_success ".env file updated successfully!"
