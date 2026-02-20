@@ -85,7 +85,7 @@ jobs:
         
     - name: Run PR automation
       env:
-        GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
         GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         GOOGLE_APPLICATION_CREDENTIALS: discord_bot/config/credentials.json
         PYTHONPATH: ${{ github.workspace }}
