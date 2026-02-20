@@ -50,10 +50,119 @@ class UserCommands:
     
     def register_commands(self):
         """Register all user commands with the bot."""
+        self.bot.tree.add_command(self._help_command())
         self.bot.tree.add_command(self._link_command())
         self.bot.tree.add_command(self._unlink_command())
         self.bot.tree.add_command(self._getstats_command())
         self.bot.tree.add_command(self._halloffame_command())
+
+    def _help_command(self):
+        """Create the help command."""
+        @app_commands.command(name="help", description="How DisgitBot works and how to get started")
+        async def help_cmd(interaction: discord.Interaction):
+            await interaction.response.defer(ephemeral=True)
+
+            is_admin = interaction.user.guild_permissions.administrator
+
+            # --- Embed 1: Getting Started ---
+            start_embed = discord.Embed(
+                title="DisgitBot — Getting Started",
+                description=(
+                    "DisgitBot tracks GitHub contributions for your organization "
+                    "and displays stats, leaderboards, and auto-assigns roles in Discord."
+                ),
+                color=discord.Color.blurple()
+            )
+            start_embed.add_field(
+                name="1️⃣  Setup (admin, one-time)",
+                value=(
+                    "`/setup` → click link → install GitHub App on your org\n"
+                    "Choose **All repositories** for automatic tracking of new repos."
+                ),
+                inline=False
+            )
+            start_embed.add_field(
+                name="2️⃣  Link your account",
+                value="`/link` → authorize with GitHub → your stats are now tracked",
+                inline=False
+            )
+            start_embed.add_field(
+                name="3️⃣  View stats",
+                value=(
+                    "`/getstats` — your personal contribution stats\n"
+                    "`/halloffame` — top 3 contributors leaderboard"
+                ),
+                inline=False
+            )
+
+            # --- Embed 2: Good to Know ---
+            faq_embed = discord.Embed(
+                title="Good to Know",
+                color=discord.Color.greyple()
+            )
+            faq_embed.add_field(
+                name="📊  When does data update?",
+                value=(
+                    "Automatically every night (midnight UTC).\n"
+                    "Admins can force refresh with `/sync`.\n"
+                    "After first setup, wait ~5–10 minutes for initial data."
+                ),
+                inline=False
+            )
+            faq_embed.add_field(
+                name="📦  New repos not showing up?",
+                value=(
+                    "If the GitHub App was installed with **Selected repositories**, "
+                    "new repos won't be tracked automatically.\n"
+                    "→ Go to **GitHub → Settings → GitHub Apps → Configure** "
+                    "and add the new repo, or switch to **All repositories**."
+                ),
+                inline=False
+            )
+            faq_embed.add_field(
+                name="👤  My stats are empty?",
+                value=(
+                    "Make sure you've run `/link` first.\n"
+                    "If you just set up, data may not be synced yet — "
+                    "try `/sync` (admin) or wait for the next automatic sync."
+                ),
+                inline=False
+            )
+
+            embeds = [start_embed, faq_embed]
+
+            # --- Embed 3: Admin Commands (only shown to admins) ---
+            if is_admin:
+                admin_embed = discord.Embed(
+                    title="Admin Commands",
+                    color=discord.Color.orange()
+                )
+                admin_embed.add_field(
+                    name="Commands",
+                    value=(
+                        "`/setup` — connect or check GitHub org connection\n"
+                        "`/sync` — manually trigger data refresh (12h cooldown)\n"
+                        "`/configure roles` — auto-assign roles based on contributions\n"
+                        "`/setup_voice_stats` — voice channel repo stats display\n"
+                        "`/check_permissions` — verify bot has required permissions"
+                    ),
+                    inline=False
+                )
+                admin_embed.add_field(
+                    name="Setup flow for organizations",
+                    value=(
+                        "If a **non-owner** member runs `/setup`, GitHub sends "
+                        "an install **request** to the org owner.\n"
+                        "After the owner approves on GitHub, "
+                        "someone must run `/setup` again in Discord to complete the link."
+                    ),
+                    inline=False
+                )
+                embeds.append(admin_embed)
+
+            await interaction.followup.send(embeds=embeds, ephemeral=True)
+
+        return help_cmd
     
     def _link_command(self):
         """Create the link command."""

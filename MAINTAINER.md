@@ -2,6 +2,31 @@
 
 This document explains how to manage the environment variables and how to re-enable features that are currently disabled (commented out) on the `feature/saas-ready` branch.
 
+## Multi-Tenant Architecture
+
+### How GitHub Org ↔ Discord Server Works
+
+- **One GitHub org can be connected to multiple Discord servers.**
+- Each Discord server stores its own config in `discord_servers/{guild_id}` with a `github_org` field.
+- Org-scoped data (repo stats, PR config, monitoring) is stored under `organizations/{github_org}/...` and shared across all Discord servers connected to the same org.
+- The GitHub App only needs to be **installed once per org** on GitHub.
+
+### Setup Flow
+
+| Scenario | Steps | Approval needed? |
+|---|---|---|
+| **Owner/Admin runs `/setup`** | `/setup` → click link → Install on GitHub → done | No (owner installs directly) |
+| **Member runs `/setup`** | `/setup` → click link → "Request" on GitHub → owner approves from GitHub notification → owner runs `/setup` in Discord | Yes (first time only) |
+| **Second Discord server, same org** | Anyone runs `/setup` → click link → app already installed → done | No (already installed) |
+
+### Key Points
+
+- Only the **first installation** per GitHub org requires the org owner to approve (if initiated by a non-owner member).
+- Once a GitHub App is installed on an org, **any Discord server** can connect to it via `/setup` without needing another approval.
+- `/add_repo` and `/remove_repo` are **scoped to the configured org** — you can only monitor repos within your connected GitHub organization.
+
+---
+
 ## Environment Variables
 
 ### Core Variables (Required for Launch)
@@ -24,7 +49,36 @@ These are already in your `.env.example`:
 ### Feature-Specific Variables (Optional/Disabled)
 - `GITHUB_WEBHOOK_SECRET`: Required ONLY for PR automation. Used to verify that webhooks are actually coming from GitHub.
 - `GITHUB_TOKEN`: Original personal access token (largely replaced by GitHub App identity).
-- `REPO_OWNER` / `REPO_NAME`: Used for triggering the initial sync pipeline. Defaults to `ruxailab/disgitbot`.
+- `REPO_OWNER`: The GitHub account/org that **owns the `disgitbot` fork** where the pipeline workflow lives. Defaults to `ruxailab`. Must be set if you are running the bot from a fork.
+- `REPO_NAME`: The repository name hosting the pipeline. Defaults to `disgitbot`.
+- `WORKFLOW_REF`: The branch/tag to dispatch the workflow on. Defaults to `main`. Set this if your active branch is not `main` (e.g. `feature/saas-ready` during testing).
+
+---
+
+## Setting Up `/sync` (Manual Pipeline Trigger)
+
+The `/sync` command lets Discord admins manually trigger the GitHub Actions data pipeline. It uses the GitHub App's installation token to dispatch a workflow on `REPO_OWNER/REPO_NAME`.
+
+### Required Steps
+
+**1. Set the correct env vars in `.env`:**
+```
+REPO_OWNER=<org-or-user-that-owns-the-disgitbot-repo>
+REPO_NAME=disgitbot
+WORKFLOW_REF=main   # or your branch name during testing
+```
+
+**2. Enable Actions permission on the GitHub App:**
+1. Go to `github.com/organizations/{your-org}/settings/apps/{your-app-slug}`
+2. Click **Permissions & events** → **Repository permissions**
+3. Find **Actions** (first item — "Workflows, workflow runs and artifacts")
+4. Change it from `No access` → **Read & write**
+5. Save changes
+
+**3. Accept the updated permissions:**
+After saving, GitHub will notify all existing installations to accept the new permission. Go to `github.com/settings/installations` (or org equivalent) and approve the updated permissions for the installation on `REPO_OWNER`.
+
+> **Note:** `REPO_OWNER` must be the account where the GitHub App is **installed** (not just where it was created). If you forked the repo to a different org/account, install the App there first.
 
 ---
 

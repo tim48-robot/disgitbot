@@ -10,6 +10,7 @@ from discord import app_commands
 from typing import Literal
 import re
 from src.services.notification_service import WebhookManager
+from shared.firestore import get_mt_client
 
 class NotificationCommands:
     """Handles notification management Discord commands."""
@@ -19,12 +20,14 @@ class NotificationCommands:
     
     def register_commands(self):
         """Register all notification commands with the bot."""
-        # CI/CD monitoring commands (still useful)
-        self.bot.tree.add_command(self._add_repo_command())
-        self.bot.tree.add_command(self._remove_repo_command())
-        self.bot.tree.add_command(self._list_repos_command())
+        # CI/CD monitoring commands disabled - webhook handler inactive
+        # To re-enable: uncomment below and re-enable /github/webhook handler in auth.py
+        # self.bot.tree.add_command(self._add_repo_command())
+        # self.bot.tree.add_command(self._remove_repo_command())
+        # self.bot.tree.add_command(self._list_repos_command())
         # PR automation commands disabled - keeping code for future re-enablement
         # self.bot.tree.add_command(self._webhook_status_command())
+        pass
     
     # /set_webhook command removed - PR automation feature disabled
     # To re-enable, restore the _set_webhook_command method and register it above
@@ -41,6 +44,26 @@ class NotificationCommands:
                 if not self._is_valid_repo_format(repository):
                     await interaction.followup.send(
                         "Invalid repository format. Please use 'owner/repo' format (e.g., 'ruxailab/disgitbot')."
+                    )
+                    return
+                
+                # Validate repo belongs to the configured GitHub org
+                repo_owner = repository.split('/')[0]
+                mt_client = get_mt_client()
+                github_org = await asyncio.to_thread(
+                    mt_client.get_org_from_server,
+                    str(interaction.guild_id)
+                )
+                if not github_org:
+                    await interaction.followup.send(
+                        "This server hasn't been set up yet. Run `/setup` first to connect a GitHub organization."
+                    )
+                    return
+                if repo_owner.lower() != github_org.lower():
+                    await interaction.followup.send(
+                        f"You can only monitor repositories within your configured organization **{github_org}**.\n"
+                        f"The repository `{repository}` belongs to `{repo_owner}`, not `{github_org}`.\n\n"
+                        f"Use the format: `{github_org}/repo-name`"
                     )
                     return
                 
@@ -81,6 +104,25 @@ class NotificationCommands:
                 if not self._is_valid_repo_format(repository):
                     await interaction.followup.send(
                         "Invalid repository format. Please use 'owner/repo' format (e.g., 'ruxailab/disgitbot')."
+                    )
+                    return
+                
+                # Validate repo belongs to the configured GitHub org
+                repo_owner = repository.split('/')[0]
+                mt_client = get_mt_client()
+                github_org = await asyncio.to_thread(
+                    mt_client.get_org_from_server,
+                    str(interaction.guild_id)
+                )
+                if not github_org:
+                    await interaction.followup.send(
+                        "This server hasn't been set up yet. Run `/setup` first to connect a GitHub organization."
+                    )
+                    return
+                if repo_owner.lower() != github_org.lower():
+                    await interaction.followup.send(
+                        f"You can only manage repositories within your configured organization **{github_org}**.\n"
+                        f"The repository `{repository}` belongs to `{repo_owner}`, not `{github_org}`."
                     )
                     return
                 

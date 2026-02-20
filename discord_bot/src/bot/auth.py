@@ -108,46 +108,75 @@ def notify_setup_complete(guild_id: str, github_org: str):
     import asyncio
     asyncio.run_coroutine_threadsafe(send_msg(), bot.loop)
 
-def trigger_initial_sync(guild_id: str, org_name: str, installation_id: Optional[int] = None) -> bool:
-    """Trigger the GitHub Actions pipeline using GitHub App identity."""
+def trigger_sync(guild_id: str, org_name: str, installation_id: Optional[int] = None, respect_cooldown: bool = True) -> dict:
+    """Trigger the GitHub Actions pipeline using GitHub App identity.
+    
+    The workflow lives in REPO_OWNER/REPO_NAME, so we always use the
+    installation token for REPO_OWNER (the bot developer's org), NOT
+    the user's org installation.  The `installation_id` parameter is
+    kept for backward-compat but ignored for the dispatch call.
+    
+    Returns a dict with:
+        triggered (bool): Whether the pipeline was dispatched
+        error (str|None): Error message if failed
+        cooldown_remaining (int|None): Seconds remaining if blocked by cooldown
+    """
     from src.services.github_app_service import GitHubAppService
     
     repo_owner = os.getenv("REPO_OWNER", "ruxailab") # Default to ruxailab if not set
     repo_name = os.getenv("REPO_NAME", "disgitbot")
     ref = os.getenv("WORKFLOW_REF", "main")
 
-    gh_app = GitHubAppService()
-    
-    # Auto-discover installation ID if not provided
-    if not installation_id:
-        installation_id = gh_app.find_installation_id(repo_owner)
-    
-    if not installation_id:
-        print(f"Skipping pipeline trigger: could not find installation for {repo_owner}")
-        return False
-
-    # Use the installation ID to get a token for the pipeline trigger
-    token = gh_app.get_installation_access_token(installation_id)
-
-    if not token:
-        print(f"Skipping pipeline trigger: failed to get token for installation {installation_id}")
-        return False
-
     mt_client = get_mt_client()
     existing_config = mt_client.get_server_config(guild_id) or {}
-    last_trigger = existing_config.get("initial_sync_triggered_at")
-    if last_trigger:
-        try:
-            last_dt = datetime.fromisoformat(last_trigger)
-            if last_dt.tzinfo is None:
-                last_dt = last_dt.replace(tzinfo=timezone.utc)
-            if datetime.now(timezone.utc) - last_dt < timedelta(minutes=10):
-                print("Skipping pipeline trigger: recent sync already triggered")
-                return False
-        except ValueError:
-            pass
 
-    # Use the App token to trigger the workflow dispatch
+    # --- Cooldown check ---
+    # Only enforce cooldown after a SUCCESSFUL sync (12h).
+    # Failed syncs can be retried immediately.
+    if respect_cooldown:
+        last_sync_at = existing_config.get("last_sync_at")
+        last_sync_status = existing_config.get("last_sync_status")  # "dispatched" or "failed"
+        if last_sync_at and last_sync_status == "dispatched":
+            try:
+                last_dt = datetime.fromisoformat(last_sync_at)
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                elapsed = datetime.now(timezone.utc) - last_dt
+                cooldown = timedelta(hours=12)
+                
+                if elapsed < cooldown:
+                    remaining = int((cooldown - elapsed).total_seconds())
+                    print(f"Skipping pipeline trigger: cooldown active ({remaining}s remaining)")
+                    return {"triggered": False, "error": None, "cooldown_remaining": remaining, "last_sync_status": "dispatched"}
+            except ValueError:
+                pass
+
+    gh_app = GitHubAppService()
+    
+    # --- IMPORTANT: Always use the installation for REPO_OWNER ---
+    # The workflow dispatch targets REPO_OWNER/REPO_NAME (e.g. ruxailab/disgitbot).
+    # The user's org installation token does NOT have access to that repo.
+    # We must use the installation on REPO_OWNER itself.
+    pipeline_installation_id = gh_app.find_installation_id(repo_owner)
+    
+    if not pipeline_installation_id:
+        error_msg = (
+            f"The GitHub App is not installed on '{repo_owner}' (the organization that hosts the pipeline). "
+            f"The bot maintainer needs to install the GitHub App on '{repo_owner}' with Actions (read & write) permission."
+        )
+        print(f"Skipping pipeline trigger: {error_msg}")
+        _save_sync_metadata(mt_client, guild_id, existing_config, "failed", error_msg)
+        return {"triggered": False, "error": error_msg, "cooldown_remaining": None}
+
+    token = gh_app.get_installation_access_token(pipeline_installation_id)
+
+    if not token:
+        error_msg = f"Failed to get access token for the pipeline installation on '{repo_owner}'"
+        print(f"Skipping pipeline trigger: {error_msg}")
+        _save_sync_metadata(mt_client, guild_id, existing_config, "failed", error_msg)
+        return {"triggered": False, "error": error_msg, "cooldown_remaining": None}
+
+    # Dispatch the workflow on REPO_OWNER/REPO_NAME
     url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/actions/workflows/discord_bot_pipeline.yml/dispatches"
     headers = {
         "Authorization": f"Bearer {token}",
@@ -163,19 +192,209 @@ def trigger_initial_sync(guild_id: str, org_name: str, installation_id: Optional
     try:
         resp = requests.post(url, headers=headers, json=payload, timeout=20)
         if resp.status_code in (201, 204):
-            mt_client.set_server_config(guild_id, {
-                **existing_config,
-                "initial_sync_triggered_at": datetime.now(timezone.utc).isoformat()
-            })
-            return True
-        print(f"Failed to trigger pipeline: {resp.status_code} {resp.text[:200]}")
+            _save_sync_metadata(mt_client, guild_id, existing_config, "dispatched", None)
+            return {"triggered": True, "error": None, "cooldown_remaining": None}
+
+        # --- Map common HTTP errors to human-readable messages ---
+        status = resp.status_code
+        if status == 403:
+            error_msg = (
+                "The GitHub App does not have permission to trigger workflows. "
+                f"Please ensure the App is installed on '{repo_owner}' with **Actions (read & write)** permission enabled."
+            )
+        elif status == 404:
+            error_msg = (
+                f"Pipeline workflow not found at '{repo_owner}/{repo_name}'. "
+                "The workflow file may have been removed or renamed."
+            )
+        elif status == 422:
+            error_msg = (
+                f"The workflow ref '{ref}' is invalid or the workflow is disabled. "
+                "Check that the branch/tag exists and the workflow is enabled."
+            )
+        else:
+            error_msg = f"GitHub API returned HTTP {status}. Please try again later."
+
+        print(f"Failed to trigger pipeline: HTTP {status} — {resp.text[:300]}")
+        _save_sync_metadata(mt_client, guild_id, existing_config, "failed", error_msg)
+        return {"triggered": False, "error": error_msg, "cooldown_remaining": None}
+    except requests.exceptions.Timeout:
+        error_msg = "The request to GitHub timed out. Please try again in a moment."
+        print(f"Error triggering pipeline: timeout")
+        _save_sync_metadata(mt_client, guild_id, existing_config, "failed", error_msg)
+        return {"triggered": False, "error": error_msg, "cooldown_remaining": None}
     except Exception as exc:
+        error_msg = "An unexpected error occurred while contacting GitHub. Please try again later."
         print(f"Error triggering pipeline: {exc}")
-    return False
+        _save_sync_metadata(mt_client, guild_id, existing_config, "failed", error_msg)
+        return {"triggered": False, "error": error_msg, "cooldown_remaining": None}
+
+
+def _save_sync_metadata(mt_client, guild_id: str, existing_config: dict, status: str, error: Optional[str]):
+    """Save sync attempt metadata to server config."""
+    update = {
+        **existing_config,
+        "last_sync_at": datetime.now(timezone.utc).isoformat(),
+        "last_sync_status": status,
+    }
+    if error:
+        update["last_sync_error"] = error
+    elif "last_sync_error" in update:
+        del update["last_sync_error"]
+    mt_client.set_server_config(guild_id, update)
+
+
+def trigger_initial_sync(guild_id: str, org_name: str, installation_id: Optional[int] = None) -> bool:
+    """Convenience wrapper for setup flows — skips cooldown on first setup."""
+    result = trigger_sync(guild_id, org_name, installation_id=installation_id, respect_cooldown=False)
+    return result["triggered"]
 
 # Start cleanup thread
 _cleanup_thread = threading.Thread(target=cleanup_old_oauth_sessions, daemon=True)
 _cleanup_thread.start()
+
+def render_status_page(title, subtitle, icon_type="info", instructions=None, button_text=None, button_url=None, footer="You can safely close this window."):
+    """Render a consistent status/error page matching /invite and /setup design."""
+    from flask import render_template_string
+
+    # Icon colors per type
+    icon_colors = {
+        "success": "#43b581",
+        "error": "#f04747",
+        "warning": "#faa61a",
+        "info": "#7289da",
+    }
+    icon_color = icon_colors.get(icon_type, "#7289da")
+
+    # All icons use a simple circle + inner symbol, matching the elegant style
+    icons = {
+        "success": f'<svg style="width:20px;height:20px;color:{icon_color}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+        "error": f'<svg style="width:20px;height:20px;color:{icon_color}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+        "warning": f'<svg style="width:20px;height:20px;color:{icon_color}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+        "info": f'<svg style="width:20px;height:20px;color:{icon_color}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+    }
+    icon_svg = icons.get(icon_type, icons["info"])
+
+    template = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>{{ title }} — DisgitBot</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+        <style>
+            html { background-color: #0f1012; overflow: hidden; }
+            @media (max-width: 480px) { html { overflow: auto; } .card { width: 95%; padding: 20px; } }
+            body {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                margin: 0; padding: 15px;
+                background: radial-gradient(circle at top left, #2c2e33 0%, #0f1012 100%);
+                color: #e1e1e1; height: 100vh;
+                display: flex; align-items: center; justify-content: center;
+                box-sizing: border-box; line-height: 1.5;
+            }
+            .card {
+                background: rgba(30, 31, 34, 0.8);
+                backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                padding: 24px 32px; border-radius: 20px;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+                width: 100%; max-width: 460px;
+                position: relative;
+            }
+            .header-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+            h1 {
+                color: #ffffff; margin: 0;
+                font-size: 19px; font-weight: 800; letter-spacing: -0.4px;
+            }
+            .subtitle { color: #b9bbbe; margin: 0 0 0 0; font-size: 13px; font-weight: 400; max-width: 90%; }
+            .divider {
+                height: 1px; margin: 20px 0;
+                background: linear-gradient(90deg, rgba(255,255,255,0.0), rgba(255,255,255,0.1), rgba(255,255,255,0.0));
+            }
+            .section-title {
+                font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px;
+                color: #949BA4; margin-bottom: 16px; font-weight: 700;
+            }
+            .step { display: flex; gap: 12px; margin-bottom: 14px; position: relative; }
+            .step-number {
+                min-width: 20px; height: 20px;
+                background: rgba(255,255,255,0.08);
+                color: #fff; border-radius: 50%;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 11px; font-weight: 700; margin-top: 1px;
+            }
+            .step-content { font-size: 13px; color: #dcddde; line-height: 1.4; }
+            .btn {
+                background: linear-gradient(135deg, #5865f2 0%, #4752c4 100%);
+                color: white; padding: 11px 20px;
+                border: none; border-radius: 10px; font-weight: 600;
+                cursor: pointer; font-size: 14px; width: 100%;
+                transition: transform 0.2s, box-shadow 0.2s, filter 0.2s;
+                text-align: center;
+                display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+                text-decoration: none;
+                box-shadow: 0 6px 16px rgba(88, 101, 242, 0.2);
+                box-sizing: border-box; position: relative; overflow: hidden;
+            }
+            .btn::before {
+                content: ''; position: absolute; top: 0; left: -100%;
+                width: 100%; height: 100%;
+                background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+                transition: left 0.5s;
+            }
+            .btn:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(88,101,242,0.35); filter: brightness(1.1); }
+            .btn:hover::before { left: 100%; }
+            .footer { margin-top: 20px; font-size: 12px; color: #82858f; }
+            code {
+                background: rgba(255, 255, 255, 0.08);
+                padding: 2px 6px; border-radius: 4px;
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 0.9em; color: #dcddde;
+                border: 1px solid rgba(255,255,255,0.1);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="header-row">{{ icon_svg|safe }} <h1>{{ title }}</h1></div>
+            <p class="subtitle">{{ subtitle|safe }}</p>
+
+            {% if instructions %}
+            <div class="divider"></div>
+            <div class="section-title">What to do</div>
+            {% for instruction in instructions %}
+            <div class="step">
+                <div class="step-number">{{ loop.index }}</div>
+                <div class="step-content">{{ instruction|safe }}</div>
+            </div>
+            {% endfor %}
+            {% endif %}
+
+            {% if button_text and button_url %}
+            <div style="margin-top: 20px;">
+                <a href="{{ button_url }}" class="btn">{{ button_text }}</a>
+            </div>
+            {% endif %}
+
+            <p class="footer">{{ footer }}</p>
+        </div>
+    </body>
+    </html>
+    """
+    return render_template_string(
+        template,
+        title=title,
+        subtitle=subtitle,
+        icon_svg=icon_svg,
+        instructions=instructions,
+        button_text=button_text,
+        button_url=button_url,
+        footer=footer
+    )
 
 def create_oauth_app():
     """
@@ -587,7 +806,13 @@ def create_oauth_app():
             discord_user_id = session.get('discord_user_id')
             
             if not discord_user_id:
-                return "Authentication failed: No Discord user session", 400
+                return render_status_page(
+                    title="Session Not Found",
+                    subtitle="We couldn't link your account because the Discord session was missing.",
+                    icon_type="error",
+                    button_text="Try /link again",
+                    button_url="https://discord.com/app"
+                ), 400
 
             if not github.authorized:
                 print("GitHub OAuth not authorized")
@@ -597,7 +822,11 @@ def create_oauth_app():
                         'error': 'GitHub authorization failed'
                     }
                 _notify_link_event(discord_user_id)
-                return "GitHub authorization failed", 400
+                return render_status_page(
+                    title="Authorization Failed",
+                    subtitle="GitHub authorization was denied. Please try the <code>/link</code> command again and approve the request.",
+                    icon_type="error"
+                ), 400
 
             resp = github.get("/user")
             if not resp.ok:
@@ -608,7 +837,11 @@ def create_oauth_app():
                         'error': 'Failed to fetch GitHub user info'
                     }
                 _notify_link_event(discord_user_id)
-                return "Failed to fetch GitHub user information", 400
+                return render_status_page(
+                    title="Profile Fetch Failed",
+                    subtitle="We couldn't retrieve your GitHub user information. Please try again later.",
+                    icon_type="error"
+                ), 400
 
             github_user = resp.json()
             github_username = github_user.get("login")
@@ -621,7 +854,11 @@ def create_oauth_app():
                         'error': 'No GitHub username found'
                     }
                 _notify_link_event(discord_user_id)
-                return "Failed to get GitHub username", 400
+                return render_status_page(
+                    title="Username Not Found",
+                    subtitle="We couldn't find a username for your GitHub account.",
+                    icon_type="error"
+                ), 400
 
             with oauth_sessions_lock:
                 oauth_sessions[discord_user_id] = {
@@ -634,22 +871,15 @@ def create_oauth_app():
 
             print(f"OAuth completed for {github_username} (Discord: {discord_user_id})")
 
-            return f"""
-            <html>
-            <head><title>Authentication Successful</title></head>
-            <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-                <h1>Authentication Successful!</h1>
-                <p>Your Discord account has been linked to GitHub user: <strong>{github_username}</strong></p>
-                <p>You can now close this tab and return to Discord.</p>
-                <script>
-                    // Auto-close after 3 seconds
-                    setTimeout(function() {{
-                        window.close();
-                    }}, 3000);
-                </script>
-            </body>
-            </html>
-            """
+            return render_status_page(
+                title="Authentication Successful!",
+                subtitle=f"Your Discord account has been linked to GitHub user: <strong>{github_username}</strong>.",
+                icon_type="success",
+                instructions=[
+                    "Return to Discord to see your linked status.",
+                    "You can now use commands like <code>/getstats</code> with your own data."
+                ]
+            )
 
         except Exception as e:
             print(f"Error in OAuth callback: {e}")
@@ -657,21 +887,36 @@ def create_oauth_app():
 
     @app.route("/github/app/install")
     def github_app_install():
-        """Redirect server owners to install the DisgitBot GitHub App."""
+        """Redirect to GitHub to install the DisgitBot GitHub App.
+        
+        GitHub handles all permission checking natively:
+        - Org owners can install directly
+        - Non-owners see a 'Request' button → owner gets notified to approve
+        - Already-installed orgs show a 'Configure' option
+        """
         from flask import request
 
         guild_id = request.args.get('guild_id')
         guild_name = request.args.get('guild_name', 'your server')
 
         if not guild_id:
-            return "Error: No Discord server information received", 400
+            return render_status_page(
+                title="Missing Server Information",
+                subtitle="We couldn't determine which Discord server you're trying to set up.",
+                icon_type="error",
+                button_text="Try /setup again",
+                button_url="https://discord.com/app"
+            ), 400
 
         app_slug = os.getenv("GITHUB_APP_SLUG")
         if not app_slug:
-            return "Server configuration error: missing GITHUB_APP_SLUG", 500
+            return render_status_page(
+                title="Configuration Error",
+                subtitle="The bot's <code>GITHUB_APP_SLUG</code> is not configured. Please contact the bot owner.",
+                icon_type="error"
+            ), 500
 
         state = state_serializer.dumps({'guild_id': str(guild_id), 'guild_name': guild_name})
-
         install_url = f"https://github.com/apps/{app_slug}/installations/new?state={state}"
         return redirect(install_url)
 
@@ -687,109 +932,136 @@ def create_oauth_app():
         setup_action = request.args.get('setup_action')
         state = request.args.get('state', '')
 
+        # --- CASE 1: No state parameter ---
+        # This happens when an org owner approves a request from GitHub directly.
+        # GitHub redirects the owner to the Setup URL WITHOUT state, because state
+        # was generated in the non-owner's session.
         if not state:
-            return "Missing state parameter. Please restart setup from Discord.", 400
+            if installation_id:
+                # Owner approved the installation from GitHub.
+                # Tell them to run /setup in Discord to complete the link.
+                gh_app = GitHubAppService()
+                installation = gh_app.get_installation(int(installation_id))
+                github_org = ''
+                if installation:
+                    account = installation.get('account') or {}
+                    github_org = account.get('login', '')
 
+                return render_status_page(
+                    title="Installation Approved!",
+                    subtitle=f"<strong>DisgitBot</strong> has been installed on <strong>{github_org}</strong>." if github_org else "<strong>DisgitBot</strong> has been installed successfully.",
+                    icon_type="success",
+                    instructions=[
+                        "Go back to your Discord server.",
+                        "Run <code>/setup</code> to link this GitHub installation to your server.",
+                    ],
+                    button_text="Open Discord",
+                    button_url="https://discord.com/app"
+                )
+            else:
+                # No state AND no installation_id
+                return render_status_page(
+                    title="Setup Session Missing",
+                    subtitle="This link was opened directly without a valid session.",
+                    icon_type="error",
+                    instructions=[
+                        "Go back to your Discord server.",
+                        "Run the <code>/setup</code> command.",
+                        "Click the new link provided by the bot.",
+                    ],
+                    button_text="Open Discord",
+                    button_url="https://discord.com/app"
+                ), 400
+
+        # --- CASE 2: State exists but no installation_id ---
         if not installation_id:
             if setup_action == 'request':
-                # Handle installation request from non-owner
+                # Non-owner clicked "Request" — installation sent to org owner for approval
                 try:
                     payload = state_serializer.loads(state, max_age=60 * 60 * 24 * 7)
+                    guild_id = str(payload.get('guild_id', ''))
                     guild_name = payload.get('guild_name', 'your server')
-                except:
-                    return "Installation requested, but session expired. Please restart setup from Discord.", 400
+                except Exception:
+                    return render_status_page(
+                        title="Session Expired",
+                        subtitle="Your setup session has expired.",
+                        icon_type="error",
+                        instructions=[
+                            "Go back to your Discord server.",
+                            "Run <code>/setup</code> again to get a fresh link.",
+                        ],
+                        button_text="Open Discord",
+                        button_url="https://discord.com/app"
+                    ), 400
 
-                pending_page = """
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Setup Requested</title>
-                    <meta charset="utf-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1">
-                    <link rel="preconnect" href="https://fonts.googleapis.com">
-                    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-                    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
-                    <style>
-                        html { background-color: #0f1012; }
-                        body {
-                            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-                            margin: 0; padding: 20px;
-                            background: radial-gradient(circle at top left, #2c2e33 0%, #0f1012 100%);
-                            color: #e1e1e1;
-                            height: 100vh;
-                            display: flex; align-items: center; justify-content: center;
-                            box-sizing: border-box;
-                            line-height: 1.6;
-                        }
-                        .card {
-                            background: rgba(30, 31, 34, 0.75);
-                            backdrop-filter: blur(16px);
-                            -webkit-backdrop-filter: blur(16px);
-                            border: 1px solid rgba(255, 255, 255, 0.08);
-                            padding: 40px; border-radius: 24px;
-                            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-                            width: 100%; max-width: 500px;
-                            text-align: center;
-                            position: relative;
-                        }
-                        .card::before {
-                            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-                            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-                        }
-                        .icon { color: #f1c40f; width: 48px; height: 48px; margin-bottom: 20px; }
-                        h1 { color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
-                        .subtitle { color: #b9bbbe; margin: 10px 0 30px 0; font-size: 15px; }
-                        .instructions {
-                            text-align: left; background: rgba(255,255,255,0.03);
-                            padding: 20px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05);
-                        }
-                        .step { display: flex; gap: 12px; margin-bottom: 12px; font-size: 14px; }
-                        .step-num { color: #8ea0e1; font-weight: 700; }
-                        .footer { margin-top: 30px; font-size: 13px; color: #82858f; }
-                    </style>
-                </head>
-                <body>
-                    <div class="card">
-                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                        <h1>Setup Requested!</h1>
-                        <p class="subtitle">You don't have permission to install apps on this organization, so a request has been sent.</p>
-                        
-                        <div class="instructions">
-                            <div class="step">
-                                <span class="step-num">1.</span>
-                                <span>The organization owner will receive a notification to approve the installation of <strong>DisgitBot</strong>.</span>
-                            </div>
-                            <div class="step">
-                                <span class="step-num">2.</span>
-                                <span>Once approved, you can return to Discord and run the <code>/setup</code> command again to complete the connection for <strong>{{ guild_name }}</strong>.</span>
-                            </div>
-                        </div>
-                        
-                        <p class="footer">You can safely close this window.</p>
-                    </div>
-                </body>
-                </html>
-                """
-                return render_template_string(pending_page, guild_name=guild_name)
+                discord_url = f"https://discord.com/channels/{guild_id}" if guild_id else "https://discord.com/app"
+                return render_status_page(
+                    title="Request Sent",
+                    subtitle="A request to install <strong>DisgitBot</strong> has been sent to the organization owner.",
+                    icon_type="success",
+                    instructions=[
+                        "The organization owner will receive a notification on GitHub to approve the app.",
+                        "After approving, the owner (or an admin) should run <code>/setup</code> in Discord to complete the connection.",
+                    ],
+                    button_text="Open Discord",
+                    button_url=discord_url
+                )
             
-            return "Missing installation_id. Please ensure you have permission to install apps onto your organization.", 400
+            return render_status_page(
+                title="Installation Cancelled",
+                subtitle="The installation was not completed. This can happen if the process was cancelled on GitHub.",
+                icon_type="error",
+                instructions=[
+                    "Go back to your Discord server.",
+                    "Run <code>/setup</code> and try installing again.",
+                    "If you're not an org owner, click <strong>Request</strong> on the GitHub page.",
+                ],
+                button_text="Open Discord",
+                button_url="https://discord.com/app"
+            ), 400
+
+        # --- CASE 3: Both state and installation_id present (happy path) ---
 
         try:
             payload = state_serializer.loads(state, max_age=60 * 60 * 24 * 7)  # 7 days for org approval
         except SignatureExpired:
-            return "Setup link expired. Please restart setup from Discord.", 400
+            return render_status_page(
+                title="Setup Link Expired",
+                subtitle="The setup link you used is no longer valid (expired after 7 days).",
+                icon_type="error",
+                button_text="Get New Link",
+                button_url="https://discord.com/app"
+            ), 400
         except BadSignature:
-            return "Invalid setup state. Please restart setup from Discord.", 400
+            return render_status_page(
+                title="Invalid Setup State",
+                subtitle="The session information is invalid or has been tampered with.",
+                icon_type="error",
+                button_text="Restart Setup",
+                button_url="https://discord.com/app"
+            ), 400
 
         guild_id = str(payload.get('guild_id', ''))
         guild_name = payload.get('guild_name', 'your server')
         if not guild_id:
-            return "Invalid setup state (missing guild_id). Please restart setup from Discord.", 400
+            return render_status_page(
+                title="Invalid Setup State",
+                subtitle="The setup session is missing the Discord server ID.",
+                icon_type="error",
+                button_text="Restart Setup",
+                button_url="https://discord.com/app"
+            ), 400
 
         gh_app = GitHubAppService()
         installation = gh_app.get_installation(int(installation_id))
         if not installation:
-            return "Failed to fetch installation details from GitHub.", 500
+            return render_status_page(
+                title="Installation Not Found",
+                subtitle="We couldn't verify the installation with GitHub. It might have been deleted or the GitHub API is temporarily unavailable.",
+                icon_type="error",
+                button_text="Try Again",
+                button_url=f"https://discord.com/channels/{guild_id}"
+            ), 500
 
         account = installation.get('account') or {}
         github_account = account.get('login')
@@ -807,12 +1079,16 @@ def create_oauth_app():
             'github_account': github_account,
             'github_account_type': github_account_type,
             'setup_source': 'github_app',
-            'created_at': datetime.now().isoformat(),
+            'created_at': datetime.now(timezone.utc).isoformat(),
             'setup_completed': True
         })
 
         if not success:
-            return "Error: Failed to save configuration", 500
+            return render_status_page(
+                title="Storage Error",
+                subtitle="We couldn't save your server configuration to our database. Please try again in a few moments.",
+                icon_type="error"
+            ), 500
 
 
 
@@ -880,7 +1156,7 @@ def create_oauth_app():
                 
                 .success-icon { 
                     color: #43b581; 
-                    width: 28px; height: 28px; 
+                    width: 24px; height: 24px; 
                     animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
                 }
 
@@ -891,13 +1167,13 @@ def create_oauth_app():
 
                 h1 { 
                     color: #ffffff; margin: 0;
-                    font-size: 26px; font-weight: 800;
-                    letter-spacing: -0.5px;
+                    font-size: 19px; font-weight: 800;
+                    letter-spacing: -0.4px;
                 }
                 
                 .subtitle { 
                     color: #b9bbbe; margin: 0;
-                    font-size: 15px; font-weight: 400;
+                    font-size: 13px; font-weight: 400;
                 }
                 
                 .highlight { color: #fff; font-weight: 600; }
@@ -905,12 +1181,12 @@ def create_oauth_app():
                 .divider {
                     height: 1px;
                     background: linear-gradient(90deg, rgba(255,255,255,0.0), rgba(255,255,255,0.1), rgba(255,255,255,0.0));
-                    margin: 30px 0;
+                    margin: 20px 0;
                 }
                 
                 .section-title { 
-                    margin: 0 0 15px 0; 
-                    font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+                    margin: 0 0 12px 0; 
+                    font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px;
                     font-weight: 700; color: #949BA4;
                 }
                 
@@ -1015,7 +1291,13 @@ def create_oauth_app():
         guild_name = request.args.get('guild_name', 'your server')
 
         if not guild_id:
-            return "Error: No Discord server information received", 400
+            return render_status_page(
+                title="Missing Server Information",
+                subtitle="We couldn't determine which Discord server you're trying to set up.",
+                icon_type="error",
+                button_text="Try /setup again",
+                button_url="https://discord.com/app"
+            ), 400
 
         github_app_install_url = f"{base_url}/github/app/install?{urlencode({'guild_id': guild_id, 'guild_name': guild_name})}"
 
@@ -1197,11 +1479,23 @@ def create_oauth_app():
         setup_source = request.form.get('setup_source', 'manual').strip() or 'manual'
         
         if not guild_id or not github_org:
-            return "Error: Missing required information", 400
+            return render_status_page(
+                title="Missing Information",
+                subtitle="We couldn't complete the setup because some required information is missing.",
+                icon_type="error",
+                button_text="Try Again",
+                button_url=f"https://discord.com/channels/{guild_id}" if guild_id else "https://discord.com/app"
+            ), 400
         
         # Validate GitHub organization name (basic validation)
         if not github_org.replace('-', '').replace('_', '').isalnum():
-            return "Error: Invalid GitHub organization name", 400
+            return render_status_page(
+                title="Invalid Organization Name",
+                subtitle="The GitHub organization name contains invalid characters.",
+                icon_type="error",
+                button_text="Try Again",
+                button_url=f"https://discord.com/channels/{guild_id}"
+            ), 400
         
         try:
             # Store server configuration
@@ -1209,12 +1503,16 @@ def create_oauth_app():
             success = mt_client.set_server_config(guild_id, {
                 'github_org': github_org,
                 'setup_source': setup_source,
-                'created_at': datetime.now().isoformat(),
+                'created_at': datetime.now(timezone.utc).isoformat(),
                 'setup_completed': True
             })
             
             if not success:
-                return "Error: Failed to save configuration", 500
+                return render_status_page(
+                    title="Storage Error",
+                    subtitle="We couldn't save your server configuration to our database. Please try again in a few moments.",
+                    icon_type="error"
+                ), 500
             
             # Trigger initial sync and Discord notification
             # Auto-discovery will find the installation ID for the REPO_OWNER
@@ -1391,7 +1689,11 @@ def create_oauth_app():
             
         except Exception as e:
             print(f"Error in complete_setup: {e}")
-            return f"Error: Setup failed - {str(e)}", 500
+            return render_status_page(
+                title="Setup Failed",
+                subtitle="An unexpected error occurred during setup. Please try again.",
+                icon_type="error"
+            ), 500
     
     return app
 

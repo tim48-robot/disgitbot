@@ -352,7 +352,7 @@ create_new_env_file() {
 
     # SECRET_KEY (auto-generate if left blank)
     echo -e "${BLUE}SECRET_KEY is used to sign session cookies (required for security).${NC}"
-    read -rp "SECRET_KEY (leave blank to auto-generate): " secret_key
+    read -p "SECRET_KEY (leave blank to auto-generate): " secret_key
     if [ -z "$secret_key" ]; then
         secret_key=$(python3 -c "import secrets; print(secrets.token_hex(32))")
         print_success "Auto-generated SECRET_KEY"
@@ -405,14 +405,14 @@ edit_env_file() {
     read -p "GitHub App Slug [$GITHUB_APP_SLUG]: " new_github_app_slug
     github_app_slug=${new_github_app_slug:-$GITHUB_APP_SLUG}
 
-    read -rp "SECRET_KEY [$SECRET_KEY]: " new_secret_key
+    read -p "SECRET_KEY [$SECRET_KEY]: " new_secret_key
     secret_key=${new_secret_key:-$SECRET_KEY}
     
     # Auto-generate if still empty (e.g. key was missing in old .env and user pressed Enter)
     if [ -z "$secret_key" ]; then
         echo -e "${BLUE}SECRET_KEY is empty. Auto-generating a secure key...${NC}"
         secret_key=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-        print_success "Auto-generated SECRET_KEY"
+        print_success "Generated: $secret_key"
     fi
     
     # Update .env file
@@ -734,7 +734,6 @@ main() {
     # Copy pr_review directory into build context for PR automation
     print_step "Copying pr_review directory into build context..."
     if [ -d "$(dirname "$ROOT_DIR")/pr_review" ]; then
-        rm -rf "$ROOT_DIR/pr_review"
         cp -r "$(dirname "$ROOT_DIR")/pr_review" "$ROOT_DIR/pr_review"
         print_success "pr_review directory copied successfully"
     else

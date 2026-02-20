@@ -66,6 +66,20 @@ FIELD_CONFIG = {
     'SECRET_KEY': {
         'required': True,
         'description': 'Flask session signing secret key (generate with: python3 -c "import secrets; print(secrets.token_hex(32))")'
+    },
+    'REPO_OWNER': {
+        'required': False,
+        'description': 'GitHub account/org that owns the disgitbot repo and has the GitHub App installed with Actions (read & write). Required for /sync to work.'
+    },
+    'REPO_NAME': {
+        'required': False,
+        'description': 'Repository name hosting the pipeline workflow. Defaults to disgitbot.',
+        'warning_if_empty': 'REPO_NAME is empty — defaulting to disgitbot. Set this if your repo has a different name.'
+    },
+    'WORKFLOW_REF': {
+        'required': False,
+        'description': 'Branch or tag to dispatch the pipeline workflow on. Defaults to main.',
+        'warning_if_empty': 'WORKFLOW_REF is empty — defaulting to main. Set this if your active branch is not main (e.g. feature/saas-ready during testing).'
     }
 }
 
