@@ -151,6 +151,30 @@ class FirestoreMultiTenant:
             print(f"Error finding guild by installation_id {installation_id}: {e}")
             return None
 
+    def complete_setup_atomically(self, guild_id: str, config: Dict[str, Any]) -> bool:
+        """Atomically complete setup — returns True only for the FIRST caller.
+
+        Uses a Firestore transaction to read setup_completed and write config
+        in one atomic operation.  If two GitHub callbacks race, only one wins.
+        """
+        doc_ref = self.db.collection('discord_servers').document(str(guild_id))
+
+        @firestore.transactional
+        def _txn(transaction):
+            snapshot = doc_ref.get(transaction=transaction)
+            existing = snapshot.to_dict() if snapshot.exists else {}
+            if existing.get('setup_completed'):
+                return False  # already completed by a racing request
+            transaction.set(doc_ref, {**existing, **config})
+            return True
+
+        try:
+            transaction = self.db.transaction()
+            return _txn(transaction)
+        except Exception as e:
+            print(f"Error in atomic setup for guild {guild_id}: {e}")
+            return False
+
 def _get_credentials_path() -> str:
     """Get the path to Firebase credentials file.
     
