@@ -1209,7 +1209,7 @@ def create_oauth_app():
             )
 
         # Trigger initial sync and Discord notification
-        trigger_initial_sync(guild_id, github_org, int(installation_id))
+        sync_triggered = trigger_initial_sync(guild_id, github_org, int(installation_id))
         notify_setup_complete(guild_id, github_org)
 
         success_page = """
