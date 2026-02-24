@@ -162,8 +162,13 @@ class GuildService:
                 return existing_roles.get(role_name)
             return None
 
+        # Ensure all members are cached before iterating
+        if not guild.chunked:
+            await guild.chunk()
+        
         # Update users
         updated_count = 0
+        print(f"Guild has {len(guild.members)} members, user_mappings has {len(user_mappings)} entries")
         for member in guild.members:
             github_username = user_mappings.get(str(member.id))
             if not github_username or github_username not in contributions:
