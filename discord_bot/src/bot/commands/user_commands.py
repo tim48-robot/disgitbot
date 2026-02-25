@@ -47,6 +47,27 @@ class UserCommands:
             if exc.code == 40060:
                 return
             raise
+
+    async def _ensure_server_registered(self, discord_user_id: str, discord_server_id: str) -> None:
+        """Ensure the current server is in the user's servers list.
+
+        A user only runs /link once.  When they later join a new server and
+        interact with the bot there, the new server_id is not yet in their
+        Firestore document.  This helper silently adds it so that:
+          - The pipeline's user-mapping lookup succeeds immediately
+          - The user gets roles assigned on the next daily run
+        """
+        mt_client = get_mt_client()
+        user_mapping = await asyncio.to_thread(mt_client.get_user_mapping, discord_user_id) or {}
+        github_id = user_mapping.get('github_id')
+        if not github_id:
+            return  # not linked yet — nothing to do
+        existing_servers = user_mapping.get('servers', [])
+        if discord_server_id not in existing_servers:
+            existing_servers.append(discord_server_id)
+            user_mapping['servers'] = existing_servers
+            await asyncio.to_thread(mt_client.set_user_mapping, discord_user_id, user_mapping)
+            print(f"Auto-registered server {discord_server_id} for GitHub user {github_id}")
     
     def register_commands(self):
         """Register all user commands with the bot."""
@@ -361,6 +382,10 @@ class UserCommands:
                 if not github_username:
                     await self._safe_followup(interaction, "Your Discord account is not linked to a GitHub username. Use `/link` to link it.")
                     return
+
+                # Ensure this server is registered in the user's Firestore document
+                # so the pipeline can assign roles on the next daily run.
+                await self._ensure_server_registered(user_id, discord_server_id)
 
                 github_org = await asyncio.to_thread(mt_client.get_org_from_server, discord_server_id)
                 if not github_org:

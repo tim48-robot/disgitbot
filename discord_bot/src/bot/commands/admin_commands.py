@@ -270,7 +270,7 @@ This setup is required only once per server."""
                 traceback.print_exc()
         
         return setup_voice_stats
-    
+
     def _add_reviewer_command(self):
         """Create the add_reviewer command."""
         @app_commands.command(name="add_reviewer", description="Add a GitHub username to the PR reviewer pool")
