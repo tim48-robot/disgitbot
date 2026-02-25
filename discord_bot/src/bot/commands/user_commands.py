@@ -19,12 +19,12 @@ class UserCommands:
         self.bot = bot
         self._active_links: set[str] = set()  # Per-user tracking, not global lock
 
-    async def _safe_defer(self, interaction):
+    async def _safe_defer(self, interaction, ephemeral=True):
         """Safely defer interaction with error handling."""
         try:
             if interaction.response.is_done():
                 return
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(ephemeral=ephemeral)
         except discord.errors.InteractionResponded:
             # Interaction was already responded to, continue anyway
             pass
@@ -33,13 +33,13 @@ class UserCommands:
                 return
             raise
 
-    async def _safe_followup(self, interaction, message, embed=False):
+    async def _safe_followup(self, interaction, message, embed=False, ephemeral=True):
         """Safely send followup message with error handling."""
         try:
             if embed:
-                await interaction.followup.send(embed=message, ephemeral=True)
+                await interaction.followup.send(embed=message, ephemeral=ephemeral)
             else:
-                await interaction.followup.send(message, ephemeral=True)
+                await interaction.followup.send(message, ephemeral=ephemeral)
         except discord.errors.InteractionResponded:
             # Interaction was already responded to, continue anyway
             pass
@@ -363,7 +363,7 @@ class UserCommands:
         ])
         async def getstats(interaction: discord.Interaction, type: str = "pr"):
             try:
-                await self._safe_defer(interaction)
+                await self._safe_defer(interaction, ephemeral=False)
             except Exception:
                 pass
 
@@ -402,7 +402,7 @@ class UserCommands:
                 # Get stats and create embed
                 embed = await self._create_stats_embed(user_data, github_username, stats_type, interaction)
                 if embed:
-                    await self._safe_followup(interaction, embed, embed=True)
+                    await self._safe_followup(interaction, embed, embed=True, ephemeral=False)
 
             except Exception as e:
                 print(f"Error in getstats command: {e}")
@@ -429,7 +429,7 @@ class UserCommands:
         ])
         async def halloffame(interaction: discord.Interaction, type: str = "pr", period: str = "all_time"):
             try:
-                await self._safe_defer(interaction)
+                await self._safe_defer(interaction, ephemeral=False)
             except Exception:
                 pass
 
@@ -448,7 +448,7 @@ class UserCommands:
                     return
 
                 embed = self._create_halloffame_embed(top_3, type, period, hall_of_fame_data.get('last_updated'))
-                await self._safe_followup(interaction, embed, embed=True)
+                await self._safe_followup(interaction, embed, embed=True, ephemeral=False)
 
             except Exception as e:
                 print(f"Error in halloffame command: {e}")
